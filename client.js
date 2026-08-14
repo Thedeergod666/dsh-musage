@@ -60,22 +60,27 @@ function useQuota(timer) {
 function InlineReadout(timer) {
   const state = useQuota(timer);
 
+  // 通用样式: marginLeft: auto 把元素推到 flex 容器最右 (紧邻 model select 那侧)
+  const baseStyle = {
+    marginLeft: "auto",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    padding: "2px 8px",
+    fontSize: 11,
+    fontVariantNumeric: "tabular-nums",
+    userSelect: "none",
+  };
+
   // 加载中
   if (!state.loaded) {
     return React.createElement(
       "span",
       {
         title: "dsh-musage · MiniMax\n加载中...",
-        style: {
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "2px 8px",
-          fontSize: 11,
+        style: Object.assign({}, baseStyle, {
           color: "var(--dsh-text-muted, #888)",
-          fontVariantNumeric: "tabular-nums",
-          userSelect: "none",
-        },
+        }),
       },
       React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
       React.createElement(
@@ -92,17 +97,10 @@ function InlineReadout(timer) {
       "span",
       {
         title: "dsh-musage · MiniMax (失败)\n" + (state.message || "unknown"),
-        style: {
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 4,
-          padding: "2px 8px",
-          fontSize: 11,
+        style: Object.assign({}, baseStyle, {
           color: "var(--dsh-text-warning, #f5a623)",
-          fontVariantNumeric: "tabular-nums",
-          userSelect: "none",
           cursor: "help",
-        },
+        }),
       },
       React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
       React.createElement("span", { style: { fontWeight: 600 } }, "⚠")
@@ -120,16 +118,9 @@ function InlineReadout(timer) {
         "dsh-musage · MiniMax\n" +
         "5h: " + fiveHrPct + "  " + (state.fiveHour ? formatResetsIn(state.fiveHour.resetsAt) : "") + "\n" +
         "7d: " + weeklyPct + "  " + (state.weekly ? formatResetsIn(state.weekly.resetsAt) : ""),
-      style: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        padding: "2px 8px",
-        fontSize: 11,
+      style: Object.assign({}, baseStyle, {
         color: "var(--dsh-text-muted, #888)",
-        fontVariantNumeric: "tabular-nums",
-        userSelect: "none",
-      },
+      }),
     },
     React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
     React.createElement("span", { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, fiveHrPct),
