@@ -1,8 +1,10 @@
 // host.js — DSH Host 半边
 //
 // 责任: 调 DSH 自己的 `credentials` Service 拿用户已配的 MiniMax API Key;
-//       用 `web.fetch` 拉 MiniMax Coding Plan 用量; 走 30s 内存缓存 + 指数
-//       退避; 暴露 host.handle('minimax:fetch-quota', ...) 给 Client 端调用.
+//       用 `subprocess` 调 `curl` 拉 MiniMax Coding Plan 用量 (DSH 部署没有
+//       fetch provider, 且 DSH `web.fetch` 协议本身不允许加 Authorization
+//       header —— 只能走 curl); 30s 内存缓存 + 指数退避; 暴露
+//       host.handle('minimax:fetch-quota', ...) 给 Client 端调用.
 //
 // 关键决策:
 //   - DSH 在用户已配的 minimax / minimax-cn / minimax-en 三个 provider 都
@@ -11,6 +13,8 @@
 //   - MiniMax API 2026-06-01 改了 schema, 兼容 percent-based + count-based 两种.
 //   - 不模仿 Musage 自己存 keys.json, 全部走 DSH credentials.resolve() ——
 //     密钥安全 + 用户配置零重复.
+//   - `subprocess` 调 curl (而不是 web.fetch): 因为 DSH 部署里没有 fetch
+//     provider, 且 WebFetchProvider 协议只支持 GET + url, 不能加 headers.
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.host` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型注解 / 全局变量.
@@ -19,23 +23,21 @@ const POLL_INTERVAL_MS = 60_000;
 const CACHE_TTL_MS = 30_000;
 const BACKOFF_BASE_MS = 5_000;
 const BACKOFF_MAX_MS = 30 * 60 * 1000;
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const MINIMAX_URL_CN = "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains";
 const MINIMAX_URL_EN = "https://api.minimax.io/v1/api/openplatform/coding_plan/remains";
 
-// 尝试多个 DSH credentials ref —— 用户在 DSH 设的 provider 不同, ref 命名不同.
-// 顺序: CN 先 (国内最常见), 然后 EN, 最后通用.
 const MINIMAX_CREDENTIAL_REFS = [
   "MINIMAX_CN_API_KEY",
   "MINIMAX_EN_API_KEY",
   "MINIMAX_API_KEY",
 ];
 
-// 端点按 ref 配对: 拿到哪个 ref 就用对应 endpoint.
 const REF_TO_URL = {
   MINIMAX_CN_API_KEY: MINIMAX_URL_CN,
   MINIMAX_EN_API_KEY: MINIMAX_URL_EN,
-  MINIMAX_API_KEY: MINIMAX_URL_CN, // 默认走 CN, 用户没明示就 fallback 到 CN (国内用户占多)
+  MINIMAX_API_KEY: MINIMAX_URL_CN,
 };
 
 function nowMs() {
@@ -49,9 +51,6 @@ function computeBackoffMs(streak) {
 }
 
 function parseEndTime(v) {
-  // MiniMax 2026-06-01 改 schema: 新版 end_time 是 "距离重置的秒数" (duration),
-  // 不是 epoch ms. 旧版 / 部分接口仍是 epoch ms.
-  // 经验规则: [10^12, 4*10^12] 范围 = epoch ms (2001-09 ~ 2096-08), 否则 duration.
   if (typeof v !== "number") return null;
   if (v >= 1e12 && v <= 4e12) return v;
   return nowMs() + v * 1000;
@@ -76,7 +75,6 @@ function parseMinimax(body) {
   if (!Array.isArray(arr) || arr.length === 0) {
     return { ok: false, kind: "parse", message: "model_remains 为空" };
   }
-  // 优先选 model_name == "general" (新 schema 唯一稳定标识), fallback 取第一条.
   const entry = arr.find((r) => r && r.model_name === "general") || arr[0];
   if (!entry) return { ok: false, kind: "parse", message: "找不到可用 model_remains 条目" };
 
@@ -102,7 +100,6 @@ function parseMinimax(body) {
 }
 
 function parseWindow(entry, prefix, legacyRemaining, legacyTotal, endTimeKey) {
-  // 新 schema: current_interval_remaining_percent + current_interval_status
   const newPercent = entry[prefix + "remaining_percent"];
   const newStatus = entry[prefix + "status"];
   if (typeof newPercent === "number" && newStatus === 1) {
@@ -113,8 +110,6 @@ function parseWindow(entry, prefix, legacyRemaining, legacyTotal, endTimeKey) {
       schema: "percent",
     };
   }
-  // 旧 schema: current_interval_total_count + current_interval_usage_count
-  // (注意: usage_count 字段名实际是 "剩余", 满 = total, 跟直觉相反)
   const total = entry[prefix + "total_count"];
   const remaining = entry[legacyRemaining] || entry[prefix + "usage_count"];
   if (typeof total === "number" && total > 0 && typeof remaining === "number") {
@@ -135,16 +130,28 @@ function classifyHttpStatus(status) {
   return "server_error";
 }
 
+function parseCurlOutput(rawText) {
+  // curl -w '\n%{http_code}' 输出: <body>\n<status>\n
+  // 找到最后一个 \n, 之后是 status code, 之前是 body.
+  if (typeof rawText !== "string") return { body: "", statusCode: 0 };
+  const lastNl = rawText.lastIndexOf("\n");
+  if (lastNl < 0) return { body: rawText, statusCode: 0 };
+  const body = rawText.slice(0, lastNl);
+  const statusText = rawText.slice(lastNl + 1).trim();
+  const statusCode = parseInt(statusText, 10);
+  if (isNaN(statusCode)) return { body: rawText, statusCode: 0 };
+  return { body, statusCode };
+}
+
 return {
-  inject: ["credentials", "web", "timer"],
+  inject: ["credentials", "subprocess", "timer"],
 
   apply(ctx) {
-    // 单实例缓存: { value, expiresAt, streak }
     let cache = null;
-    let activeRef = null; // 这一轮 fetch 用的 ref, 记下来下次直接用 (避免每 tick 遍历)
+    let activeRef = null;
+    let curlPath = null;
 
     async function loadApiKey() {
-      // 优先用上次成功的 ref (性能 + 行为稳定)
       if (activeRef) {
         const credentials = ctx.get("credentials");
         if (credentials) {
@@ -152,7 +159,6 @@ return {
           if (hit && hit.value) return { ref: activeRef, key: hit.value };
         }
       }
-      // 遍历尝试所有 known ref
       const credentials = ctx.get("credentials");
       if (!credentials) return { ref: null, key: null };
       for (const ref of MINIMAX_CREDENTIAL_REFS) {
@@ -162,11 +168,74 @@ return {
             activeRef = ref;
             return { ref, key: hit.value };
           }
-        } catch (e) {
-          // 忽略单个 ref 的失败, 继续尝试下一个
-        }
+        } catch (e) {}
       }
       return { ref: null, key: null };
+    }
+
+    async function resolveCurl() {
+      if (curlPath) return curlPath;
+      const subprocess = ctx.get("subprocess");
+      if (!subprocess) {
+        throw new Error("subprocess service 不可用");
+      }
+      try {
+        curlPath = await subprocess.resolveExecutable("curl");
+      } catch (e) {
+        throw new Error("找不到 curl: " + (e && e.message || String(e)));
+      }
+      return curlPath;
+    }
+
+    async function curlFetch(url, key) {
+      const subprocess = ctx.get("subprocess");
+      if (!subprocess) throw new Error("subprocess service 不可用");
+      const c = await resolveCurl();
+      const handle = subprocess.spawn({
+        argv: [
+          c,
+          "-sS",
+          "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
+          "-w", "\n%{http_code}",
+          "-H", "Authorization: Bearer " + key,
+          "-H", "Accept: application/json",
+          url,
+        ],
+        cwd: "/",
+        stdio: ["ignore", "collect", "collect"],
+        graceMs: REQUEST_TIMEOUT_MS,
+      });
+      const outcome = await handle.done;
+      const stdout = handle.collected && handle.collected.stdout
+        ? handle.collected.stdout.readFrom(0)
+        : { text: "", nextOffset: 0, lossy: false };
+      const stderr = handle.collected && handle.collected.stderr
+        ? handle.collected.stderr.readFrom(0)
+        : { text: "", nextOffset: 0, lossy: false };
+      if (outcome.exitCode !== 0) {
+        return {
+          ok: false,
+          kind: "network",
+          message: "curl 退出 " + outcome.exitCode + " · " + stderr.text.slice(0, 200),
+        };
+      }
+      const { body, statusCode } = parseCurlOutput(stdout.text);
+      if (statusCode === 0) {
+        return { ok: false, kind: "network", message: "curl 输出没拿到 HTTP 状态: " + stdout.text.slice(0, 200) };
+      }
+      if (statusCode !== 200) {
+        return {
+          ok: false,
+          kind: classifyHttpStatus(statusCode),
+          httpStatus: statusCode,
+          message: "HTTP " + statusCode + " · " + body.slice(0, 200),
+        };
+      }
+      const parsed = parseMinimax(body);
+      if (parsed.ok) {
+        parsed.url = url;
+      }
+      return parsed;
     }
 
     async function fetchQuotaOnce() {
@@ -178,41 +247,16 @@ return {
           message: "未配置 MiniMax API Key (在 DSH 模型设置里配置 minimax / minimax-cn / minimax-en 任一 provider)",
         };
       }
-      const web = ctx.get("web");
-      if (!web) {
-        return { ok: false, kind: "server_error", message: "web.fetch Service 不可用" };
-      }
       const url = REF_TO_URL[ref] || MINIMAX_URL_CN;
-      let result;
       try {
-        result = await web.fetch({
-          url,
-          method: "GET",
-          headers: {
-            Authorization: "Bearer " + key,
-            Accept: "application/json",
-          },
-        });
+        const result = await curlFetch(url, key);
+        if (result.ok) {
+          result.ref = ref;
+        }
+        return result;
       } catch (e) {
         return { ok: false, kind: "network", message: "fetch 异常: " + (e && e.message || String(e)) };
       }
-      if (!result) {
-        return { ok: false, kind: "network", message: "fetch 返回空" };
-      }
-      if (result.status !== 200) {
-        return {
-          ok: false,
-          kind: classifyHttpStatus(result.status),
-          httpStatus: result.status,
-          message: "HTTP " + result.status + " · " + String(result.body || "").slice(0, 200),
-        };
-      }
-      const parsed = parseMinimax(result.body);
-      if (parsed.ok) {
-        parsed.url = url;
-        parsed.ref = ref;
-      }
-      return parsed;
     }
 
     async function getQuota() {
@@ -228,25 +272,19 @@ return {
       return result;
     }
 
-    // 后台轮询: 首次 100ms 发起, 之后 60s 一次
     const disposeTimer = ctx.timer.interval(async () => {
       try {
         await getQuota();
-      } catch (e) {
-        // swallow — 错误已经在 cache 里, 不抛
-      }
+      } catch (e) {}
     }, POLL_INTERVAL_MS);
-    // 立即尝一次 (不阻塞 apply)
     ctx.timer.timeout(() => { getQuota(); }, 100);
 
-    // Host handler: 客户端拉数据入口
     const disposeHandle = harness.handle("minimax:fetch-quota", async (args) => {
       const forceRefresh = !!(args && args.force === true);
       if (forceRefresh) cache = null;
       return getQuota();
     });
 
-    // 清理
     ctx.effect(() => {
       return () => {
         try { disposeTimer(); } catch (e) {}
