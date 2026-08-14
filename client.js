@@ -1,12 +1,12 @@
 // client.js — DSH Client 半边
 //
-// 责任: 在 `conversation.input.right` Slot (composer 卡右端, model select 左边)
+// 责任: 在 `conversation.input.left` Slot (composer 卡内, model select 左侧)
 //       注册一行 status readout. 永远显示, 失败时显示 ⚠, 成功时显示用量百分比.
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.client` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型 / 全局变量.
 //
-// v0.0.7: 删 sidebar.footer.action 按钮 (位置错), 全部走 input.right inline readout.
+// v0.0.8: Slot 改 input.left (model select 左侧), 之前 v0.0.7 input.right 放错位置.
 //         失败 / 加载中都不再 return null, 都显示一行 status.
 
 const REFRESH_INTERVAL_MS = 60_000;
