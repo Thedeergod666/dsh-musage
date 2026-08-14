@@ -154,10 +154,10 @@ return {
     if (slots === undefined) return;
     const timer = ctx.timer;
 
-    slots.inject("conversation.input.right", () => {
+    slots.inject("conversation.input.left", () => {
       return slots.register(
         {
-          name: "conversation.input.right",
+          name: "conversation.input.left",
           id: "musage-minimax",
           order: 0,
           label: "MiniMax",
