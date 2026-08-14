@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.0.7 — 2026-08-14
+
+### Changed
+- 只用 `conversation.input.right` 一个 slot (composer 卡 model select 左边)
+- 移除 v0.0.6 的 `sidebar.footer.action` 按钮 (位置错)
+- 失败/加载中 inline readout 不再 `return null` 隐藏, 改成显示 `MiniMax ⚠` / `MiniMax ···`,
+  让用户随时能看到 plugin 状态
+
+## v0.0.6 — 2026-08-14 (skip)
+
+### Notes
+- v0.0.6 拆双 slot (sidebar 按钮 + composer inline), 但用户指出 sidebar 位置是错的
+- v0.0.7 直接砍掉 sidebar, 单 inline readout
+
 ## v0.0.5 — 2026-08-14
 
 ### Changed
