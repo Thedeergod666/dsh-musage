@@ -6,6 +6,10 @@
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.client` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型 / 全局变量.
+//
+// 修复要点 (v0.0.2): 动态 Client half 不能用 setInterval / setTimeout 等
+// 浏览器 timer 全局. 必须 inject: ['timer'], 拿到 ctx.timer Service.
+// DSH 客户端 ctx.timer.interval(callback, delay) 返回 () => void 的 disposer.
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -26,10 +30,8 @@ function formatResetsIn(resetsAtMs) {
   return " · " + m + "m 重置";
 }
 
-function DockRow() {
-  // 自定义状态管理 — 用 plain React, 不引外部 hook 库
+function DockRow(timer) {
   const [state, setState] = React.useState({ ok: false, message: "加载中" });
-  const tickRef = React.useRef(0);
 
   React.useEffect(() => {
     let alive = true;
@@ -44,16 +46,16 @@ function DockRow() {
     }
 
     refresh();
-    const interval = setInterval(refresh, REFRESH_INTERVAL_MS);
+    // 重要: 用 ctx.timer.interval 而不是 setInterval.
+    const dispose = timer.interval(refresh, REFRESH_INTERVAL_MS);
     return () => {
       alive = false;
-      clearInterval(interval);
+      try { dispose(); } catch (e) {}
     };
-  }, []);
+  }, [timer]);
 
   // 状态显示
   if (!state.ok) {
-    // 错误态: 短, 不抢眼
     const kind = state.kind || "other";
     const msg = state.message || "unknown";
     return React.createElement(
@@ -79,10 +81,7 @@ function DockRow() {
       ),
       React.createElement(
         "span",
-        {
-          style: { opacity: 0.85 },
-          title: msg,
-        },
+        { style: { opacity: 0.85 }, title: msg },
         kind === "unconfigured" ? "未配置" : "暂不可用"
       )
     );
@@ -96,12 +95,8 @@ function DockRow() {
         "span",
         {
           key: "5h",
-          style: {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-          },
-          title: "5h 用量" + formatResetsIn(state.fiveHour.resetsAt).replace(" · ", " · 重置 ")
+          style: { display: "inline-flex", alignItems: "center", gap: 4 },
+          title: "5h 用量" + formatResetsIn(state.fiveHour.resetsAt).replace(" · ", " · 重置 "),
         },
         React.createElement("span", { style: { color: "var(--dsh-text-muted, #888)", fontWeight: 500 } }, "5h"),
         React.createElement(
@@ -123,12 +118,8 @@ function DockRow() {
         "span",
         {
           key: "7d",
-          style: {
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 4,
-          },
-          title: "周用量" + formatResetsIn(state.weekly.resetsAt).replace(" · ", " · 重置 ")
+          style: { display: "inline-flex", alignItems: "center", gap: 4 },
+          title: "周用量" + formatResetsIn(state.weekly.resetsAt).replace(" · ", " · 重置 "),
         },
         React.createElement("span", { style: { color: "var(--dsh-text-muted, #888)", fontWeight: 500 } }, "7d"),
         React.createElement(
@@ -145,7 +136,6 @@ function DockRow() {
     );
   }
 
-  // 分隔符
   const children = [];
   children.push(
     React.createElement(
@@ -188,9 +178,14 @@ function DockRow() {
 }
 
 return {
+  inject: ["timer"],
+
   async apply(ctx) {
     const slots = ctx.get("slots");
     if (slots === undefined) return;
+
+    // 关键: 把 ctx.timer 闭包到 React component 内部, 而不是依赖 setInterval.
+    const timer = ctx.timer;
 
     slots.inject("conversation.composer.dock", () => {
       return slots.register(
@@ -200,7 +195,7 @@ return {
           order: 1,
           label: "MiniMax",
         },
-        () => DockRow()
+        (props) => DockRow(timer)
       );
     });
   },
