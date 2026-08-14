@@ -1,13 +1,15 @@
 // client.js — DSH Client 半边
 //
-// 责任: 在 `conversation.input.left` Slot (composer 卡内, model select 左侧)
-//       注册一行 status readout. 永远显示, 失败时显示 ⚠, 成功时显示用量百分比.
+// 责任: 在 `conversation.input.dock` Slot (composer 卡**上方**自己的行, full width)
+//       注册一行 status readout, 永远显示, **右对齐** (靠近 model select 上方).
+//       失败显示 ⚠, 成功显示 "5h 28% · 7d 14%", 加载中显示 ···.
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.client` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型 / 全局变量.
 //
-// v0.0.8: Slot 改 input.left (model select 左侧), 之前 v0.0.7 input.right 放错位置.
-//         失败 / 加载中都不再 return null, 都显示一行 status.
+// v0.0.10: 用 input.dock (full-width row, 在 composer 卡上方) 而不是 input.left
+//          (input.left 的 marginLeft: auto / flex 布局不生效 —— 它不像 flex 容器).
+//          input.dock 容器是 normal flow, 内部靠 text-align: right 控制右对齐.
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -60,33 +62,41 @@ function useQuota(timer) {
 function InlineReadout(timer) {
   const state = useQuota(timer);
 
-  // 通用样式: marginLeft: auto 把元素推到 flex 容器最右 (紧邻 model select 那侧)
-  const baseStyle = {
-    marginLeft: "auto",
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 4,
-    padding: "2px 8px",
+  // 容器: full width, right-align 内容
+  const containerStyle = {
+    width: "100%",
+    textAlign: "right",
+    padding: "2px 0",
     fontSize: 11,
     fontVariantNumeric: "tabular-nums",
     userSelect: "none",
   };
 
+  // 内部 span: inline-block, 只占自己宽度
+  const innerBaseStyle = {
+    display: "inline-block",
+    padding: "2px 8px",
+  };
+
   // 加载中
   if (!state.loaded) {
     return React.createElement(
-      "span",
-      {
-        title: "dsh-musage · MiniMax\n加载中...",
-        style: Object.assign({}, baseStyle, {
-          color: "var(--dsh-text-muted, #888)",
-        }),
-      },
-      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+      "div",
+      { style: containerStyle },
       React.createElement(
         "span",
-        { style: { opacity: 0.6, fontSize: 10 } },
-        "···"
+        {
+          title: "dsh-musage · MiniMax\n加载中...",
+          style: Object.assign({}, innerBaseStyle, {
+            color: "var(--dsh-text-muted, #888)",
+          }),
+        },
+        React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+        React.createElement(
+          "span",
+          { style: { opacity: 0.6, fontSize: 10 } },
+          "···"
+        )
       )
     );
   }
@@ -94,16 +104,20 @@ function InlineReadout(timer) {
   // 失败
   if (!state.ok) {
     return React.createElement(
-      "span",
-      {
-        title: "dsh-musage · MiniMax (失败)\n" + (state.message || "unknown"),
-        style: Object.assign({}, baseStyle, {
-          color: "var(--dsh-text-warning, #f5a623)",
-          cursor: "help",
-        }),
-      },
-      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
-      React.createElement("span", { style: { fontWeight: 600 } }, "⚠")
+      "div",
+      { style: containerStyle },
+      React.createElement(
+        "span",
+        {
+          title: "dsh-musage · MiniMax (失败)\n" + (state.message || "unknown"),
+          style: Object.assign({}, innerBaseStyle, {
+            color: "var(--dsh-text-warning, #f5a623)",
+            cursor: "help",
+          }),
+        },
+        React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+        React.createElement("span", { style: { fontWeight: 600 } }, "⚠")
+      )
     );
   }
 
@@ -112,27 +126,31 @@ function InlineReadout(timer) {
   const weeklyPct = state.weekly ? formatPercent(state.weekly.usedPercent) : "—";
 
   return React.createElement(
-    "span",
-    {
-      title:
-        "dsh-musage · MiniMax\n" +
-        "5h: " + fiveHrPct + "  " + (state.fiveHour ? formatResetsIn(state.fiveHour.resetsAt) : "") + "\n" +
-        "7d: " + weeklyPct + "  " + (state.weekly ? formatResetsIn(state.weekly.resetsAt) : ""),
-      style: Object.assign({}, baseStyle, {
-        color: "var(--dsh-text-muted, #888)",
-      }),
-    },
-    React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
-    React.createElement("span", { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, fiveHrPct),
+    "div",
+    { style: containerStyle },
     React.createElement(
       "span",
-      { style: { opacity: 0.5, fontSize: 10 } },
-      "·"
-    ),
-    React.createElement(
-      "span",
-      { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } },
-      weeklyPct
+      {
+        title:
+          "dsh-musage · MiniMax\n" +
+          "5h: " + fiveHrPct + "  " + (state.fiveHour ? formatResetsIn(state.fiveHour.resetsAt) : "") + "\n" +
+          "7d: " + weeklyPct + "  " + (state.weekly ? formatResetsIn(state.weekly.resetsAt) : ""),
+        style: Object.assign({}, innerBaseStyle, {
+          color: "var(--dsh-text-muted, #888)",
+        }),
+      },
+      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+      React.createElement("span", { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, fiveHrPct),
+      React.createElement(
+        "span",
+        { style: { opacity: 0.5, fontSize: 10 } },
+        "·"
+      ),
+      React.createElement(
+        "span",
+        { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } },
+        weeklyPct
+      )
     )
   );
 }
@@ -145,12 +163,12 @@ return {
     if (slots === undefined) return;
     const timer = ctx.timer;
 
-    slots.inject("conversation.input.left", () => {
+    slots.inject("conversation.input.dock", () => {
       return slots.register(
         {
-          name: "conversation.input.left",
+          name: "conversation.input.dock",
           id: "musage-minimax",
-          order: 0,
+          order: 5,
           label: "MiniMax",
         },
         function () { return InlineReadout(timer); }
