@@ -202,7 +202,13 @@ return {
           url,
         ],
         cwd: "/",
-        stdio: ["ignore", "collect", "collect"],
+        // SubprocessCollect 对象形式 (不是 'collect' 字符串): stdio 上限 8MB stdout, 64KB stderr.
+        // 'collect' 字符串会让 DSH 内部 .maxBytes 读 undefined 抛错.
+        stdio: [
+          "ignore",
+          { maxBytes: 8 * 1024 * 1024 },
+          { maxBytes: 64 * 1024 },
+        ],
         graceMs: REQUEST_TIMEOUT_MS,
       });
       const outcome = await handle.done;
