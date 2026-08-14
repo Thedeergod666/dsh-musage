@@ -31,7 +31,8 @@ function formatResetsIn(resetsAtMs) {
 }
 
 function DockRow(timer) {
-  const [state, setState] = React.useState({ ok: false, message: "加载中" });
+  // loaded: false (初次) / true (已尝试至少一次 fetch)
+  const [state, setState] = React.useState({ ok: false, loaded: false, message: "加载中" });
 
   React.useEffect(() => {
     let alive = true;
@@ -39,9 +40,13 @@ function DockRow(timer) {
     async function refresh() {
       try {
         const result = await host.call("minimax:fetch-quota", {});
-        if (alive) setState(result || { ok: false, kind: "other", message: "空响应" });
+        if (alive) {
+          setState(result
+            ? { ...result, loaded: true }
+            : { ok: false, loaded: true, kind: "other", message: "空响应" });
+        }
       } catch (e) {
-        if (alive) setState({ ok: false, kind: "network", message: String(e && e.message || e) });
+        if (alive) setState({ ok: false, loaded: true, kind: "network", message: String(e && e.message || e) });
       }
     }
 
@@ -54,38 +59,10 @@ function DockRow(timer) {
     };
   }, [timer]);
 
-  // 状态显示
-  if (!state.ok) {
-    const kind = state.kind || "other";
-    const msg = state.message || "unknown";
-    return React.createElement(
-      "div",
-      {
-        style: {
-          display: "flex",
-          gap: 8,
-          padding: "2px 8px",
-          fontSize: 11,
-          lineHeight: 1.4,
-          color: "var(--dsh-text-muted, #888)",
-          opacity: 0.7,
-        },
-      },
-      React.createElement(
-        "span",
-        {
-          style: { fontWeight: 500, color: "var(--dsh-text-muted, #888)" },
-          title: "dsh-musage · MiniMax Coding Plan",
-        },
-        "MiniMax"
-      ),
-      React.createElement(
-        "span",
-        { style: { opacity: 0.85 }, title: msg },
-        kind === "unconfigured" ? "未配置" : "暂不可用"
-      )
-    );
-  }
+  // 加载中: 不显示 (避免一帧闪 "加载中")
+  if (!state.loaded) return null;
+  // 加载完成但失败: 不显示 (失败时整个 dock entry 隐藏, 避免长期 "暂不可用" 干扰)
+  if (!state.ok) return null;
 
   // 成功: 5h + 7d 两个窗口
   const parts = [];
@@ -187,12 +164,12 @@ return {
     // 关键: 把 ctx.timer 闭包到 React component 内部, 而不是依赖 setInterval.
     const timer = ctx.timer;
 
-    slots.inject("conversation.composer.dock", () => {
+    slots.inject("conversation.input.dock", () => {
       return slots.register(
         {
-          name: "conversation.composer.dock",
+          name: "conversation.input.dock",
           id: "musage-minimax",
-          order: 1,
+          order: 5,
           label: "MiniMax",
         },
         (props) => DockRow(timer)
