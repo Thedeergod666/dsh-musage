@@ -1,15 +1,14 @@
 // client.js — DSH Client 半边
 //
-// 责任: 在 `conversation.composer.dock` Slot 里注册一行实时余额.
-//       调 `host.call('minimax:fetch-quota', {})` 拉数据, 60s 轮询.
-//       错误时静默显示简短提示, 不抢眼.
+// 责任: 注册两个 Slot:
+//   1. sidebar.footer.action —— 侧栏底部"用量"按钮(永远显示, 显示状态, 点击弹 modal)
+//   2. conversation.input.right —— composer 卡右端(model select 左边)极简 inline readout
+//
+// 失败时: sidebar 按钮显示 "⚠", inline readout 隐藏 (return null)
+// 加载中: 都不显示 (避免 "加载中" 闪一帧)
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.client` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型 / 全局变量.
-//
-// 修复要点 (v0.0.2): 动态 Client half 不能用 setInterval / setTimeout 等
-// 浏览器 timer 全局. 必须 inject: ['timer'], 拿到 ctx.timer Service.
-// DSH 客户端 ctx.timer.interval(callback, delay) 返回 () => void 的 disposer.
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -22,16 +21,15 @@ function formatPercent(used) {
 function formatResetsIn(resetsAtMs) {
   if (typeof resetsAtMs !== "number" || !resetsAtMs) return "";
   const ms = resetsAtMs - Date.now();
-  if (ms <= 0) return " · 即将重置";
+  if (ms <= 0) return " 即将重置";
   const totalMin = Math.floor(ms / 60000);
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
-  if (h > 0) return " · " + h + "h" + m + "m 重置";
-  return " · " + m + "m 重置";
+  if (h > 0) return h + "h" + m + "m 重置";
+  return m + "m 重置";
 }
 
-function DockRow(timer) {
-  // loaded: false (初次) / true (已尝试至少一次 fetch)
+function useQuota(timer) {
   const [state, setState] = React.useState({ ok: false, loaded: false, message: "加载中" });
 
   React.useEffect(() => {
@@ -51,7 +49,6 @@ function DockRow(timer) {
     }
 
     refresh();
-    // 重要: 用 ctx.timer.interval 而不是 setInterval.
     const dispose = timer.interval(refresh, REFRESH_INTERVAL_MS);
     return () => {
       alive = false;
@@ -59,98 +56,222 @@ function DockRow(timer) {
     };
   }, [timer]);
 
-  // 加载中: 不显示 (避免一帧闪 "加载中")
-  if (!state.loaded) return null;
-  // 加载完成但失败: 不显示 (失败时整个 dock entry 隐藏, 避免长期 "暂不可用" 干扰)
-  if (!state.ok) return null;
+  return state;
+}
 
-  // 成功: 5h + 7d 两个窗口
-  const parts = [];
-  if (state.fiveHour) {
-    parts.push(
-      React.createElement(
-        "span",
-        {
-          key: "5h",
-          style: { display: "inline-flex", alignItems: "center", gap: 4 },
-          title: "5h 用量" + formatResetsIn(state.fiveHour.resetsAt).replace(" · ", " · 重置 "),
-        },
-        React.createElement("span", { style: { color: "var(--dsh-text-muted, #888)", fontWeight: 500 } }, "5h"),
-        React.createElement(
-          "span",
-          { style: { fontVariantNumeric: "tabular-nums", fontWeight: 600 } },
-          formatPercent(state.fiveHour.usedPercent)
-        ),
-        React.createElement(
-          "span",
-          { style: { color: "var(--dsh-text-muted, #888)", opacity: 0.7 } },
-          formatResetsIn(state.fiveHour.resetsAt)
-        )
-      )
-    );
-  }
-  if (state.weekly) {
-    parts.push(
-      React.createElement(
-        "span",
-        {
-          key: "7d",
-          style: { display: "inline-flex", alignItems: "center", gap: 4 },
-          title: "周用量" + formatResetsIn(state.weekly.resetsAt).replace(" · ", " · 重置 "),
-        },
-        React.createElement("span", { style: { color: "var(--dsh-text-muted, #888)", fontWeight: 500 } }, "7d"),
-        React.createElement(
-          "span",
-          { style: { fontVariantNumeric: "tabular-nums", fontWeight: 600 } },
-          formatPercent(state.weekly.usedPercent)
-        ),
-        React.createElement(
-          "span",
-          { style: { color: "var(--dsh-text-muted, #888)", opacity: 0.7 } },
-          formatResetsIn(state.weekly.resetsAt)
-        )
-      )
-    );
-  }
+// ───────── Sidebar footer button ─────────
 
-  const children = [];
-  children.push(
-    React.createElement(
-      "span",
+function SidebarButton(timer) {
+  const state = useQuota(timer);
+  const [open, setOpen] = React.useState(false);
+
+  // 加载中: 显示 disabled 状态
+  if (!state.loaded) {
+    return React.createElement(
+      "button",
       {
-        key: "label",
-        style: { fontWeight: 500, color: "var(--dsh-text-muted, #888)" },
-        title: "dsh-musage · MiniMax Coding Plan",
+        type: "button",
+        disabled: true,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 10px",
+          background: "transparent",
+          color: "var(--dsh-text-muted, #888)",
+          border: "none",
+          borderRadius: 6,
+          cursor: "default",
+          fontSize: 12,
+          width: "100%",
+        },
       },
       "MiniMax"
-    )
-  );
-  for (let i = 0; i < parts.length; i++) {
-    if (i > 0) {
-      children.push(
-        React.createElement(
-          "span",
-          { key: "sep" + i, style: { color: "var(--dsh-text-muted, #888)", opacity: 0.4 } },
-          "·"
-        )
-      );
-    }
-    children.push(parts[i]);
+    );
   }
+
+  // 文字: 成功显示 5h + 7d, 失败显示 ⚠
+  const mainText = state.ok
+    ? `MiniMax ${formatPercent(state.fiveHour && state.fiveHour.usedPercent)} · ${formatPercent(state.weekly && state.weekly.usedPercent)}`
+    : "MiniMax ⚠";
+
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
+      "button",
+      {
+        type: "button",
+        onClick: () => setOpen(true),
+        title: state.ok
+          ? `dsh-musage · MiniMax\n5h ${formatPercent(state.fiveHour && state.fiveHour.usedPercent)}\n7d ${formatPercent(state.weekly && state.weekly.usedPercent)}`
+          : `dsh-musage · MiniMax (失败)\n${state.message || ""}`,
+        style: {
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "6px 10px",
+          background: "transparent",
+          color: state.ok ? "var(--dsh-text, #eee)" : "var(--dsh-text-warning, #f5a623)",
+          border: "none",
+          borderRadius: 6,
+          cursor: "pointer",
+          fontSize: 12,
+          fontWeight: 500,
+          width: "100%",
+          textAlign: "left",
+        },
+      },
+      mainText
+    ),
+    open && React.createElement(QuotaModal, {
+      state,
+      onClose: () => setOpen(false),
+    })
+  );
+}
+
+function QuotaModal({ state, onClose }) {
+  // 简易 modal —— 用固定定位 + backdrop
+  const overlayStyle = {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(0,0,0,0.5)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 9999,
+  };
+  const cardStyle = {
+    background: "var(--dsh-bg-elevated, #1a1a1a)",
+    color: "var(--dsh-text, #eee)",
+    padding: "20px 24px",
+    borderRadius: 12,
+    minWidth: 320,
+    maxWidth: 480,
+    boxShadow: "0 8px 32px rgba(0,0,0,0.4)",
+    border: "1px solid var(--dsh-border, #333)",
+  };
+  const rowStyle = {
+    display: "flex",
+    justifyContent: "space-between",
+    padding: "8px 0",
+    borderBottom: "1px solid var(--dsh-border, #2a2a2a)",
+  };
+  const titleStyle = {
+    fontSize: 16,
+    fontWeight: 600,
+    marginBottom: 16,
+  };
+  const errStyle = {
+    color: "var(--dsh-text-warning, #f5a623)",
+    fontSize: 13,
+    padding: "8px 0",
+    wordBreak: "break-all",
+  };
 
   return React.createElement(
     "div",
+    { style: overlayStyle, onClick: onClose },
+    React.createElement(
+      "div",
+      { style: cardStyle, onClick: (e) => e.stopPropagation() },
+      React.createElement("div", { style: titleStyle }, "MiniMax Coding Plan"),
+
+      state.ok && state.fiveHour && React.createElement(
+        "div",
+        { style: rowStyle },
+        React.createElement("span", null, "5h 用量"),
+        React.createElement(
+          "span",
+          { style: { fontWeight: 600 } },
+          formatPercent(state.fiveHour.usedPercent),
+          React.createElement(
+            "span",
+            { style: { fontSize: 11, opacity: 0.6, marginLeft: 8 } },
+            formatResetsIn(state.fiveHour.resetsAt)
+          )
+        )
+      ),
+      state.ok && state.weekly && React.createElement(
+        "div",
+        { style: rowStyle },
+        React.createElement("span", null, "7d 用量"),
+        React.createElement(
+          "span",
+          { style: { fontWeight: 600 } },
+          formatPercent(state.weekly.usedPercent),
+          React.createElement(
+            "span",
+            { style: { fontSize: 11, opacity: 0.6, marginLeft: 8 } },
+            formatResetsIn(state.weekly.resetsAt)
+          )
+        )
+      ),
+
+      !state.ok && React.createElement(
+        "div",
+        { style: errStyle },
+        state.message || "未知错误"
+      ),
+      !state.ok && state.kind && React.createElement(
+        "div",
+        { style: { fontSize: 11, opacity: 0.5, marginTop: 4 } },
+          "kind: " + state.kind
+      ),
+
+      React.createElement(
+        "div",
+        {
+          style: {
+            marginTop: 16,
+            textAlign: "right",
+            fontSize: 11,
+            opacity: 0.5,
+          },
+        },
+        "dsh-musage · 60s 自动刷新"
+      )
+    )
+  );
+}
+
+// ───────── Inline readout in composer input.right ─────────
+
+function InlineReadout(timer) {
+  const state = useQuota(timer);
+
+  // 加载中 / 失败: 隐藏
+  if (!state.loaded) return null;
+  if (!state.ok) return null;
+  if (!state.fiveHour) return null;
+
+  return React.createElement(
+    "span",
     {
+      title: "MiniMax " + formatPercent(state.fiveHour.usedPercent) + " 5h · " +
+        (state.weekly ? formatPercent(state.weekly.usedPercent) + " 7d" : ""),
       style: {
-        display: "flex",
-        gap: 8,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
         padding: "2px 8px",
         fontSize: 11,
-        lineHeight: 1.4,
         color: "var(--dsh-text-muted, #888)",
+        fontVariantNumeric: "tabular-nums",
+        userSelect: "none",
       },
     },
-    children
+    React.createElement(
+      "span",
+      { style: { color: "var(--dsh-text-muted, #888)", fontWeight: 500 } },
+      "MiniMax"
+    ),
+    React.createElement(
+      "span",
+      { style: { fontWeight: 600 } },
+      formatPercent(state.fiveHour.usedPercent)
+    )
   );
 }
 
@@ -160,19 +281,31 @@ return {
   async apply(ctx) {
     const slots = ctx.get("slots");
     if (slots === undefined) return;
-
-    // 关键: 把 ctx.timer 闭包到 React component 内部, 而不是依赖 setInterval.
     const timer = ctx.timer;
 
-    slots.inject("conversation.input.dock", () => {
+    // 1. Sidebar footer action: always-visible button + modal
+    slots.inject("sidebar.footer.action", () => {
       return slots.register(
         {
-          name: "conversation.input.dock",
+          name: "sidebar.footer.action",
           id: "musage-minimax",
-          order: 5,
+          order: 0,
           label: "MiniMax",
         },
-        (props) => DockRow(timer)
+        () => SidebarButton(timer)
+      );
+    });
+
+    // 2. Inline readout in composer input.right (visible only on success)
+    slots.inject("conversation.input.right", () => {
+      return slots.register(
+        {
+          name: "conversation.input.right",
+          id: "musage-minimax",
+          order: 0,
+          label: "MiniMax",
+        },
+        () => InlineReadout(timer)
       );
     });
   },
