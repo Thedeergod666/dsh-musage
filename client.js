@@ -27,6 +27,7 @@ const PROVIDER_ALIASES = {
   "minimax-en": "minimax",
   "minimax": "minimax",
   "deepseek": "deepseek",
+  "deepseek-official": "deepseek",  // DSH dsh-llm-deepseek 实际 provider id (带后缀)
 };
 
 function readActiveProvider(snapshot) {
@@ -52,8 +53,8 @@ function InlineReadout(props, models, timer) {
   const modelsSvc = models;
   React.useEffect(() => {
     if (!modelsSvc || !props || !props.sessionId) {
-      console.log("[musage-client] skip: no models or no sessionId. models=" + !!modelsSvc + " sessionId=" + (props && props.sessionId) + " → fallback default 'minimax'");
-      setProvider("minimax");
+      console.log("[musage-client] skip: no models or no sessionId. models=" + !!modelsSvc + " sessionId=" + (props && props.sessionId) + " → no fallback (没订阅到 provider)");
+      setProvider(null);
       return;
     }
     let directory;
@@ -61,13 +62,13 @@ function InlineReadout(props, models, timer) {
       directory = modelsSvc.directoryFor(props.sessionId);
       console.log("[musage-client] directoryFor ok: " + (directory ? "have directory" : "null"));
     } catch (e) {
-      console.error("[musage-client] directoryFor 抛异常: " + (e && e.stack || e) + " → fallback default 'minimax'");
-      setProvider("minimax");
+      console.error("[musage-client] directoryFor 抛异常: " + (e && e.stack || e) + " → no fallback");
+      setProvider(null);
       return;
     }
     if (!directory || !directory.store) {
-      console.log("[musage-client] directory 缺失 → fallback default 'minimax'");
-      setProvider("minimax");
+      console.log("[musage-client] directory 缺失 → no fallback");
+      setProvider(null);
       return;
     }
     const updateProvider = () => {
@@ -75,10 +76,10 @@ function InlineReadout(props, models, timer) {
         const snap = directory.store.getSnapshot();
         const p = readActiveProvider(snap);
         console.log("[musage-client] model 变化: current.provider=" + (snap && snap.current && snap.current.provider) + " → mapped=" + p);
-        setProvider(p || "minimax");
+        setProvider(p);  // 不 fallback minimax, 拿不到就 null → 显示 "musage"
       } catch (e) {
         console.error("[musage-client] readActiveProvider 抛异常: " + (e && e.stack || e));
-        setProvider("minimax");
+        setProvider(null);
       }
     };
     updateProvider();
