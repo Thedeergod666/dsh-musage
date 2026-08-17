@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.21 — 2026-08-14
+
+### Added
+- **kimi** provider: 端点 `api.kimi.com/coding/v1/usages`, Bearer 鉴权, 双窗口 (5h + 7d 已用%)
+- **openrouter** provider: 端点 `openrouter.ai/api/v1/credits`, 余额 = total_credits - total_usage (USD)
+- **zhipu** provider: 端点 `open.bigmodel.cn/api/monitor/usage/quota/limit`, 智谱特殊 `Authorization: <key>` 不加 Bearer 前缀, unit=3 (5h) + unit=6 (周)
+- 新 3 个 provider ref 名: `KIMI_CODING_API_KEY` / `OPENROUTER_API_KEY` / `ZAI_CODING_CN_API_KEY` (兼容 DSH credentials 命名规范)
+- 新 3 个 client alias: `kimi-coding` / `openrouter` / `zai-coding-cn`
+- 3 个新 display 分支: kimi (5h | 7d), openrouter ($余额), zhipu (5h | 7d)
+- curlFetch 支持 `authStyle: "raw"` (zhipu)
+
+### Notes
+- kimi-coding endpoint 用户配置正确时 schema: `limits[].detail.{limit,remaining,resetTime}` + `usage.{limit,remaining,resetTime}`
+- 端点验证: openrouter 返 200 + balance_infos; zhipu 返 200 + 5h/7d 双窗口. kimi 返 403 (permission_denied, 用户订阅未开通, 但 schema 路径正确)
+- 灵感: Musage kimi.rs / openrouter.rs / zhipu.rs
+
+## v0.0.20 — 2026-08-14
+
+### Fixed
+- DeepSeek 解析走 Musage 真实 schema: `balance_infos[].total_balance` (string 数字), 不是老 ccswitch `balance[]`
+- 加 `formatBalance(n, currency)`: 按 currency 字段选符号 (¥ CNY / $ USD)
+
 ## v0.0.15 — 2026-08-14
 
 ### Fixed

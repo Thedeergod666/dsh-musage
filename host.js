@@ -51,7 +51,6 @@ const PROVIDERS = {
       MINIMAX_API_KEY:   "https://api.minimaxi.com/v1/api/openplatform/coding_plan/remains",
     },
     parse: parseMinimaxResponse,
-    formatOk: (data) => ({ kind: "quota", display: data.display, ...data }),
   },
   deepseek: {
     refs: ["DEEPSEEK_API_KEY"],
@@ -59,7 +58,31 @@ const PROVIDERS = {
       DEEPSEEK_API_KEY: "https://api.deepseek.com/user/balance",
     },
     parse: parseDeepseekBalance,
-    formatOk: (data) => ({ kind: "balance", display: data.display, ...data }),
+  },
+  kimi: {
+    refs: ["KIMI_CODING_API_KEY", "KIMI_API_KEY"],
+    urls: {
+      KIMI_CODING_API_KEY: "https://api.kimi.com/coding/v1/usages",
+      KIMI_API_KEY:         "https://api.kimi.com/coding/v1/usages",
+    },
+    parse: parseKimiResponse,
+  },
+  openrouter: {
+    refs: ["OPENROUTER_API_KEY"],
+    urls: {
+      OPENROUTER_API_KEY: "https://openrouter.ai/api/v1/credits",
+    },
+    parse: parseOpenrouterResponse,
+  },
+  zhipu: {
+    refs: ["ZAI_CODING_CN_API_KEY", "ZHIPU_API_KEY"],
+    urls: {
+      ZAI_CODING_CN_API_KEY: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+      ZHIPU_API_KEY:          "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
+    },
+    parse: parseZhipuResponse,
+    // 智谱特殊: Authorization header 不加 "Bearer " 前缀 (来自 Musage zhipu.rs 注释)
+    authStyle: "raw",
   },
 };
 
@@ -194,6 +217,169 @@ function parseDeepseekBalance(body) {
   };
 }
 
+// ----- kimi parser (Musage kimi.rs schema: 5h 窗口 + 7d 窗口) -----
+// 真实响应 (用户配置正确时):
+//   { "limits": [ { "detail": { "limit": 100, "remaining": 72, "resetTime": "..." } } ],
+//     "usage": { "limit": 1000, "remaining": 742, "resetTime": 1749840000 } }
+//
+// 5h 窗口: limits[].detail.{limit, remaining, resetTime}
+// 7d 窗口: usage.{limit, remaining, resetTime}
+// 容错: resetTime 字符串 (ISO) 或数字 (epoch 秒/毫秒) 都能解析.
+
+function parseKimiResponse(body) {
+  let json;
+  try {
+    json = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return { ok: false, kind: "parse", message: "JSON 解析失败" };
+  }
+  if (!json || typeof json !== "object") {
+    return { ok: false, kind: "parse", message: "Kimi 响应不是对象" };
+  }
+  // 错误响应: {"code": "permission_denied", ...}
+  if (json.code && json.code !== 200 && json.code !== "200") {
+    return { ok: false, kind: "server_error", message: "Kimi 返错: " + (json.code || "?") + " · " + (json.msg || "") };
+  }
+  // 5h 窗口: limits[0].detail
+  const firstLimit = Array.isArray(json.limits) && json.limits[0] && json.limits[0].detail;
+  const five = firstLimit || {};
+  const fiveHrLimit = Number(five.limit) || 0;
+  const fiveHrRemaining = Number(five.remaining) || 0;
+  const fiveHrResetsAt = parseKimiResetTime(five.resetTime);
+  // 7d 窗口: usage
+  const week = json.usage || {};
+  const weeklyLimit = Number(week.limit) || 0;
+  const weeklyRemaining = Number(week.remaining) || 0;
+  const weeklyResetsAt = parseKimiResetTime(week.resetTime);
+  if (!fiveHrLimit && !weeklyLimit) {
+    return { ok: false, kind: "parse", message: "Kimi 响应没有 5h/7d 限额" };
+  }
+  return {
+    ok: true,
+    provider: "kimi",
+    fiveHour: { limit: fiveHrLimit, remaining: fiveHrRemaining, resetsAt: fiveHrResetsAt },
+    weekly:   { limit: weeklyLimit,   remaining: weeklyRemaining,   resetsAt: weeklyResetsAt },
+    display: {
+      fiveHrPct:     fiveHrLimit     > 0 ? Math.round((fiveHrLimit - fiveHrRemaining) / fiveHrLimit * 100) : null,
+      weeklyPct:     weeklyLimit     > 0 ? Math.round((weeklyLimit - weeklyRemaining) / weeklyLimit * 100) : null,
+      fiveHrResetsIn: fiveHrResetsAt ? formatResetsIn(fiveHrResetsAt) : null,
+      weeklyResetsIn: weeklyResetsAt ? formatResetsIn(weeklyResetsAt) : null,
+    },
+  };
+}
+
+function parseKimiResetTime(v) {
+  if (typeof v === "number") {
+    if (v >= 1e12 && v <= 4e12) return v;
+    if (v > 1e9) return v * 1000;
+    return null;
+  }
+  if (typeof v === "string" && v.length > 0) {
+    const t = Date.parse(v);
+    return isNaN(t) ? null : t;
+  }
+  return null;
+}
+
+// ----- openrouter parser (Musage openrouter.rs: total_credits - total_usage) -----
+// 真实响应: { "data": { "total_credits": 95, "total_usage": 92.85 } }
+// 余额 = total_credits - total_usage, USD.
+
+function parseOpenrouterResponse(body) {
+  let json;
+  try {
+    json = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return { ok: false, kind: "parse", message: "JSON 解析失败" };
+  }
+  if (!json || typeof json !== "object") {
+    return { ok: false, kind: "parse", message: "OpenRouter 响应不是对象" };
+  }
+  const data = json.data;
+  if (!data || typeof data !== "object") {
+    return { ok: false, kind: "parse", message: "data 字段缺失" };
+  }
+  const total = Number(data.total_credits);
+  const used = Number(data.total_usage);
+  if (!isFinite(total) || !isFinite(used)) {
+    return { ok: false, kind: "parse", message: "total_credits / total_usage 不是数字" };
+  }
+  const remaining = total - used;
+  return {
+    ok: true,
+    provider: "openrouter",
+    balance: remaining,
+    totalCredits: total,
+    usedCredits: used,
+    currency: "USD",
+    display: {
+      balanceUsd: remaining,
+      balanceText: formatBalance(remaining, "USD"),
+    },
+  };
+}
+
+// ----- zhipu (智谱 GLM Coding Plan) parser (Musage zhipu.rs) -----
+// 真实响应:
+//   { "code": 200, "success": true,
+//     "data": { "level": "lite",
+//                "limits": [
+//                  { "type": "CREDIT_LIMIT", "unit": 3, "number": 5,
+//                    "usage": 2000, "currentValue": 2010, "remaining": 0,
+//                    "percentage": 100, "nextResetTime": 1786969101067 },
+//                  { "type": "CREDIT_LIMIT", "unit": 6, ... }
+//                ] } }
+//
+// unit=3 是 5h 窗口, unit=6 是周窗口. percentage 直接是已用 0-100 (服务器算好).
+// 老版 TOKENS_LIMIT 没有 usage/remaining, 只用 percentage.
+
+function parseZhipuResponse(body) {
+  let json;
+  try {
+    json = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return { ok: false, kind: "parse", message: "JSON 解析失败" };
+  }
+  if (!json || typeof json !== "object") {
+    return { ok: false, kind: "parse", message: "智谱响应不是对象" };
+  }
+  if (json.success === false) {
+    return { ok: false, kind: "server_error", message: "智谱 success=false · " + (json.msg || "") };
+  }
+  const data = json.data;
+  if (!data || !Array.isArray(data.limits)) {
+    return { ok: false, kind: "parse", message: "data.limits 缺失" };
+  }
+  // unit=3 = 5h, unit=6 = 周. 找 limit
+  const fiveHr = data.limits.find((l) => l && (l.unit === 3 || l.unit === "3"));
+  const weekly = data.limits.find((l) => l && (l.unit === 6 || l.unit === "6"));
+  if (!fiveHr && !weekly) {
+    return { ok: false, kind: "parse", message: "找不到 unit=3 (5h) 或 unit=6 (周) 的 limit" };
+  }
+  function pickWindow(w) {
+    if (!w) return null;
+    const limit = Number(w.usage) || 0;
+    const remaining = Number(w.remaining) || 0;
+    const pct = (typeof w.percentage === "number") ? w.percentage : (limit > 0 ? Math.round((limit - remaining) / limit * 100) : null);
+    const resetsAt = parseEndTime(w.nextResetTime);
+    return { limit, remaining, usedPercent: pct, resetsAt };
+  }
+  const f = pickWindow(fiveHr);
+  const w = pickWindow(weekly);
+  return {
+    ok: true,
+    provider: "zhipu",
+    fiveHour: f,
+    weekly: w,
+    display: {
+      fiveHrPct:     f ? f.usedPercent : null,
+      weeklyPct:     w ? w.usedPercent : null,
+      fiveHrResetsIn: f && f.resetsAt ? formatResetsIn(f.resetsAt) : null,
+      weeklyResetsIn: w && w.resetsAt ? formatResetsIn(w.resetsAt) : null,
+    },
+  };
+}
+
 function formatBalance(n, currency) {
   // 简洁显示: 数字 + currency 符号. 大数取整, 小数 2 位.
   const symbol = currency === "CNY" ? "¥" : currency === "USD" ? "$" : "";
@@ -281,10 +467,14 @@ return {
       return curlPath;
     }
 
-    async function curlFetch(url, key) {
+    async function curlFetch(url, key, authStyle) {
       const subprocess = ctx.get("subprocess");
       if (!subprocess) throw new Error("subprocess service 不可用");
       const c = await resolveCurl();
+      // zhipu 特殊: Authorization 不加 "Bearer " 前缀 (来自 Musage zhipu.rs 注释)
+      const authHeader = (authStyle === "raw")
+        ? "Authorization: " + key
+        : "Authorization: Bearer " + key;
       let handle;
       try {
         handle = subprocess.spawn({
@@ -292,7 +482,7 @@ return {
             c, "-sS",
             "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
             "-w", "\n%{http_code}",
-            "-H", "Authorization: Bearer " + key,
+            "-H", authHeader,
             "-H", "Accept: application/json",
             url,
           ],
@@ -363,7 +553,7 @@ return {
       const url = cfg.urls[ref] || cfg.urls[cfg.refs[0]];
       let raw;
       try {
-        raw = await curlFetch(url, key);
+        raw = await curlFetch(url, key, cfg.authStyle);
         if (!raw.ok) return raw;
       } catch (e) {
         return { ok: false, kind: "network", message: "fetch 异常: " + (e && e.message || String(e)) };

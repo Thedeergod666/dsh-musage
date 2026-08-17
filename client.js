@@ -28,6 +28,9 @@ const PROVIDER_ALIASES = {
   "minimax": "minimax",
   "deepseek": "deepseek",
   "deepseek-official": "deepseek",  // DSH dsh-llm-deepseek 实际 provider id (带后缀)
+  "kimi-coding": "kimi",
+  "openrouter": "openrouter",
+  "zai-coding-cn": "zhipu",
 };
 
 function readActiveProvider(snapshot) {
@@ -174,9 +177,11 @@ function InlineReadout(props, models, timer) {
 }
 
 function providerLabel(p) {
-  // 显示名: 简单 capitalize
   if (p === "minimax") return "MiniMax";
   if (p === "deepseek") return "DeepSeek";
+  if (p === "kimi") return "Kimi";
+  if (p === "openrouter") return "OpenRouter";
+  if (p === "zhipu") return "Zhipu";
   return p;
 }
 
@@ -196,6 +201,35 @@ function renderDisplay(provider, d) {
     return [
       React.createElement("span", { key: "p", style: { fontWeight: 500 } }, "DeepSeek"),
       React.createElement("span", { key: "b", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, txt),
+    ];
+  }
+  if (provider === "kimi") {
+    // kimi schema 同 minimax: 5h + 7d 已用%
+    const fiveHrPct = (typeof d.fiveHrPct === "number") ? d.fiveHrPct + "%" : "—";
+    const weeklyPct = (typeof d.weeklyPct === "number") ? d.weeklyPct + "%" : "—";
+    return [
+      React.createElement("span", { key: "p", style: { fontWeight: 500 } }, "Kimi"),
+      React.createElement("span", { key: "5", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "5h " + fiveHrPct),
+      React.createElement("span", { key: "sep1", style: { opacity: 0.5, fontSize: 10 } }, "|"),
+      React.createElement("span", { key: "7", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "7d " + weeklyPct),
+    ];
+  }
+  if (provider === "openrouter") {
+    const txt = d.balanceText || ("$" + (d.balanceUsd != null ? d.balanceUsd.toFixed(2) : "0.00"));
+    return [
+      React.createElement("span", { key: "p", style: { fontWeight: 500 } }, "OpenRouter"),
+      React.createElement("span", { key: "b", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, txt),
+    ];
+  }
+  if (provider === "zhipu") {
+    // 智谱 schema 同 minimax: 5h + 7d 已用%
+    const fiveHrPct = (typeof d.fiveHrPct === "number") ? d.fiveHrPct + "%" : "—";
+    const weeklyPct = (typeof d.weeklyPct === "number") ? d.weeklyPct + "%" : "—";
+    return [
+      React.createElement("span", { key: "p", style: { fontWeight: 500 } }, "Zhipu"),
+      React.createElement("span", { key: "5", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "5h " + fiveHrPct),
+      React.createElement("span", { key: "sep1", style: { opacity: 0.5, fontSize: 10 } }, "|"),
+      React.createElement("span", { key: "7", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "7d " + weeklyPct),
     ];
   }
   return [React.createElement("span", { key: "p" }, provider)];
