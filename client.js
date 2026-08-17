@@ -1,19 +1,19 @@
 // client.js — DSH Client 半边
 //
 // 责任: 在 `shell.overlay` Slot (frame-wide 浮层, 页面**最顶层**) 注册一个
-//       小型浮窗 readout, **视觉上贴近 minimax select 右上方**.
+//       小型 chip, **视觉上贴近 DSH 顶部右上角 user info chip 旁边**.
 //
-// 浮窗位置: position: fixed (overlay 容器本身 fixed), 估算 minimax select
-// 大约在 (right: 130px, top: 70% viewport) 附近, 用相对 viewport 定位.
+// 浮窗位置: position: fixed; top: 12px; right: 130px (跟 user chip 平行, 在它左边).
+//          user chip 大约在 right: 24px / top: 12px. 我们浮在它旁边.
 //
 // 失败显示 ⚠, 成功显示 "5h 28% · 7d 14%", 加载中显示 ···.
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.client` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型 / 全局变量.
 //
-// v0.0.11: 用 shell.overlay (frame-wide 浮层) 代替 composer card 内的 slot.
-//          shell.overlay 是 page-level 浮窗, 不会被 composer 卡内位置限制.
-//          缺点: minimax select 滚动时浮窗不跟着, 但用户不在意.
+// v0.0.12: 用户最终目标位置是 DSH 顶部右侧 user info chip 旁边. 之前 v0.0.11
+//          放在 minimax select 估算位置错. 用户截图显示目标 chip 在 DSH
+//          滚动条左侧 (chat area 右上角).
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -66,14 +66,14 @@ function useQuota(timer) {
 function OverlayFloater(timer) {
   const state = useQuota(timer);
 
-  // shell.overlay 容器是 frame-wide 浮层 (position: fixed 或 absolute), 我们内部
-  // 容器相对 viewport 固定到一个角落 (估算 minimax select 位置).
+  // shell.overlay 容器是 frame-wide 浮层. 我们内部容器相对 viewport 固定到
+  // **DSH 顶部右上角 user chip 旁边**. user chip 大约在 right: 24px / top: 12px.
   const containerStyle = {
     position: "fixed",
-    right: 180,         // minimax select 大约在右侧 130px 位置, 留点 padding
-    bottom: 80,        // minimax select 在 composer 卡内, 卡在底部. 浮窗约在 card 上方
+    top: 12,
+    right: 130,        // user chip 左侧 (user chip 宽约 100px, 留 ~30px 间距)
     zIndex: 9000,
-    pointerEvents: "auto",  // shell.overlay 默认 click-through, 我们打开接收事件
+    pointerEvents: "auto",
     padding: "4px 10px",
     borderRadius: 8,
     background: "var(--dsh-bg-elevated, rgba(20,20,20,0.85))",
