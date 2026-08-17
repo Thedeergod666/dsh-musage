@@ -146,9 +146,14 @@ function parseMinimaxWindow(entry, prefix, legacyRemaining, legacyTotal, endTime
   return null;
 }
 
-// ----- deepseek balance parser (来自 Musage deepseek.rs) -----
-// 响应示例: { "balance": ["10.50"], "is_available": true, ... }
-// 余额 USD 字符串, 数组 (兼容多币种); 取第一个非空, 转 number.
+// ----- deepseek balance parser (从 Musage deepseek.rs 抄, v0.0.19 验证) -----
+// 真实 schema:
+//   { "is_available": true,
+//     "balance_infos": [ { "currency": "CNY", "total_balance": "43.97",
+//                            "granted_balance": "0.00", "topped_up_balance": "43.97" } ] }
+//
+// v0.0.19 之前我抄的是 ccswitch 老 schema ({"balance": ["10.50"]}) 错, 真实字段是
+// balance_infos[].total_balance (string 数字, 需要 parseFloat).
 
 function parseDeepseekBalance(body) {
   let json;
@@ -163,34 +168,37 @@ function parseDeepseekBalance(body) {
   if (json.is_available === false) {
     return { ok: false, kind: "server_error", message: "DeepSeek 账号 is_available=false" };
   }
-  const arr = json.balance;
-  if (!Array.isArray(arr) || arr.length === 0) {
-    return { ok: false, kind: "parse", message: "balance 字段为空" };
+  const infos = json.balance_infos;
+  if (!Array.isArray(infos) || infos.length === 0) {
+    return { ok: false, kind: "parse", message: "balance_infos 字段为空" };
   }
-  const balanceStr = arr.find((v) => typeof v === "string" && v.length > 0);
-  if (!balanceStr) {
-    return { ok: false, kind: "parse", message: "balance 没有有效字符串" };
+  const first = infos[0];
+  const totalStr = first && first.total_balance;
+  if (typeof totalStr !== "string" && typeof totalStr !== "number") {
+    return { ok: false, kind: "parse", message: "balance_infos[0].total_balance 不存在" };
   }
-  const balance = parseFloat(balanceStr);
+  const balance = parseFloat(totalStr);
   if (!isFinite(balance)) {
-    return { ok: false, kind: "parse", message: "balance 解析成数字失败: " + balanceStr };
+    return { ok: false, kind: "parse", message: "balance 解析成数字失败: " + totalStr };
   }
+  const currency = (first && first.currency) || "USD";
   return {
     ok: true,
     provider: "deepseek",
     balance,
-    currency: "USD",
+    currency,
     display: {
       balanceUsd: balance,
-      balanceText: formatUsd(balance),
+      balanceText: formatBalance(balance, currency),
     },
   };
 }
 
-function formatUsd(n) {
-  if (n >= 100) return "$" + n.toFixed(0);
-  if (n >= 10) return "$" + n.toFixed(2);
-  return "$" + n.toFixed(2);
+function formatBalance(n, currency) {
+  // 简洁显示: 数字 + currency 符号. 大数取整, 小数 2 位.
+  const symbol = currency === "CNY" ? "¥" : currency === "USD" ? "$" : "";
+  const text = (n >= 100) ? n.toFixed(0) : (n >= 10 ? n.toFixed(2) : n.toFixed(2));
+  return symbol + text;
 }
 
 function formatResetsIn(resetsAtMs) {
