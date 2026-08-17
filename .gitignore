@@ -8,3 +8,5 @@ build/
 .env
 .env.local
 *.tmp
+PixPin_*.gif
+*.tmp-recording*
