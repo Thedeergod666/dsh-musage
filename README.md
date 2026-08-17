@@ -2,6 +2,15 @@
 
 > DSH (DeepSeek Harness) 版的 [Musage](https://github.com/Thedeergod666/Musage) — 在 DSH composer 工具栏里实时显示 5 家 AI 套餐 provider 的用量余额, 跟着当前模型自动切换.
 
+[![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-blueviolet)](https://github.com/topics/dsh-plugin)
+[![cordis-plugin](https://img.shields.io/badge/cordis--plugin-dynamic-blue)](https://github.com/topics/cordis-plugin)
+[![dsh](https://img.shields.io/badge/dsh-harness-orange)](https://github.com/topics/dsh)
+[![ai-usage](https://img.shields.io/badge/ai--usage-quota-brightgreen)](https://github.com/topics/ai-usage)
+[![coding-plan](https://img.shields.io/badge/coding--plan-monitor-yellow)](https://github.com/topics/coding-plan)
+[![MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
+[![v0.0.21](https://img.shields.io/badge/version-v0.0.21-blue.svg)](./CHANGELOG.md)
+[![5 providers](https://img.shields.io/badge/providers-5-orange.svg)](./docs/architecture.md)
+
 ![demo](docs/assets/demo.gif)
 
 ## 这是什么
