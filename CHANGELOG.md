@@ -10,6 +10,29 @@
 - 新 3 个 client alias: `kimi-coding` / `openrouter` / `zai-coding-cn`
 - 3 个新 display 分支: kimi (5h | 7d), openrouter ($余额), zhipu (5h | 7d)
 - curlFetch 支持 `authStyle: "raw"` (zhipu)
+- README + docs/architecture.md + deploy.md 全部更新到 v0.0.21 现状
+- `docs/assets/demo.gif` 演示 gif
+
+### Notes
+- kimi-coding endpoint 用户配置正确时 schema: `limits[].detail.{limit,remaining,resetTime}` + `usage.{limit,remaining,resetTime}`
+- 端点验证: openrouter 返 200 + balance_infos; zhipu 返 200 + 5h/7d 双窗口. kimi 返 403 (permission_denied, 用户订阅未开通, 但 schema 路径正确)
+- 灵感: Musage kimi.rs / openrouter.rs / zhipu.rs
+
+## 状态
+
+✅ PoC 完整收尾, 5 provider 全实装 (minimax / deepseek / kimi / openrouter / zhipu).
+✅ Slot 位置修对: `conversation.input.right`, 紧贴 model select 左侧, `margin-left: auto` 推右.
+✅ 跟 DSH 当前 model 自动切换, 无需手动操作.
+✅ 15 步踩坑沉淀在 `docs/cordis-pitfalls.md`.
+✅ 演示 gif 准备好 README 截图.
+✅ 仓库准备好 GitHub 推送 (5 provider 演示 + 完整 README + docs + 15 坑沉淀).
+
+## 下一步
+
+- 推 GitHub: 仓库完整, 走 `git remote add origin git@github.com:Thedeergod666/dsh-musage.git && git push -u origin main`
+- 扩 B 档 5 provider (tavily / zenmux / stepfun / siliconflow / claude_official), 走同 A 档模板
+- 火山方舟 (HMAC 签名) 单独插件 (需要复杂签名代码, 不适合放 host.js)
+- 加 `systemPrompt.variable` 让模型在每轮推理前看到"哪家还剩多少", 避免 429
 
 ### Notes
 - kimi-coding endpoint 用户配置正确时 schema: `limits[].detail.{limit,remaining,resetTime}` + `usage.{limit,remaining,resetTime}`
