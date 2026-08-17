@@ -1,19 +1,16 @@
 // client.js — DSH Client 半边
 //
-// 责任: 在 `shell.overlay` Slot (frame-wide 浮层, 页面**最顶层**) 注册一个
-//       小型 chip, **视觉上贴近 DSH 顶部右上角 user info chip 旁边**.
-//
-// 浮窗位置: position: fixed; top: 12px; right: 130px (跟 user chip 平行, 在它左边).
-//          user chip 大约在 right: 24px / top: 12px. 我们浮在它旁边.
-//
-// 失败显示 ⚠, 成功显示 "5h 28% · 7d 14%", 加载中显示 ···.
+// 责任: 在 `conversation.input.left` Slot (composer 卡内, `Full access` 右边,
+//       model select 左边) 注册一行 status readout.
+//       容器 width:100% + text-align:right → 内容右对齐, 贴近 minimax select.
 //
 // 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.client` 字段.
 //       不能出现 import / require / JSX / TypeScript 类型 / 全局变量.
 //
-// v0.0.12: 用户最终目标位置是 DSH 顶部右侧 user info chip 旁边. 之前 v0.0.11
-//          放在 minimax select 估算位置错. 用户截图显示目标 chip 在 DSH
-//          滚动条左侧 (chat area 右上角).
+// v0.0.13: 回到 input.left (位置对) + width:100% text-align:right (右对齐).
+//          v0.0.8 input.left 位置正确, 但当时想 marginLeft auto 右对齐失败,
+//          我错误地一路改到 input.right/dock/overlay —— 位置越走越远.
+//          现在用容器级 text-align: right 解决右对齐.
 
 const REFRESH_INTERVAL_MS = 60_000;
 
@@ -63,42 +60,44 @@ function useQuota(timer) {
   return state;
 }
 
-function OverlayFloater(timer) {
+function InlineReadout(timer) {
   const state = useQuota(timer);
 
-  // shell.overlay 容器是 frame-wide 浮层. 我们内部容器相对 viewport 固定到
-  // **DSH 顶部右上角 user chip 旁边**. user chip 大约在 right: 24px / top: 12px.
+  // 容器: width 100% (占满 input.left slot), text-align right → 右对齐贴 minimax.
   const containerStyle = {
-    position: "fixed",
-    top: 12,
-    right: 130,        // user chip 左侧 (user chip 宽约 100px, 留 ~30px 间距)
-    zIndex: 9000,
-    pointerEvents: "auto",
-    padding: "4px 10px",
-    borderRadius: 8,
-    background: "var(--dsh-bg-elevated, rgba(20,20,20,0.85))",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
-    border: "1px solid var(--dsh-border, rgba(255,255,255,0.08))",
-    boxShadow: "0 4px 16px rgba(0,0,0,0.3)",
+    width: "100%",
+    textAlign: "right",
     fontSize: 11,
     fontVariantNumeric: "tabular-nums",
     userSelect: "none",
+  };
+
+  // 内部 span: inline-block, 只占自己宽度, 被父容器 text-align right 推到右侧.
+  const innerBaseStyle = {
+    display: "inline-block",
+    padding: "2px 8px",
   };
 
   // 加载中
   if (!state.loaded) {
     return React.createElement(
       "div",
-      {
-        title: "dsh-musage · MiniMax\n加载中...",
-        style: Object.assign({}, containerStyle, {
-          color: "var(--dsh-text-muted, #888)",
-        }),
-      },
-      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
-      " ",
-      React.createElement("span", { style: { opacity: 0.6 } }, "···")
+      { style: containerStyle },
+      React.createElement(
+        "span",
+        {
+          title: "dsh-musage · MiniMax\n加载中...",
+          style: Object.assign({}, innerBaseStyle, {
+            color: "var(--dsh-text-muted, #888)",
+          }),
+        },
+        React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+        React.createElement(
+          "span",
+          { style: { opacity: 0.6, fontSize: 10 } },
+          "···"
+        )
+      )
     );
   }
 
@@ -106,15 +105,19 @@ function OverlayFloater(timer) {
   if (!state.ok) {
     return React.createElement(
       "div",
-      {
-        title: "dsh-musage · MiniMax (失败)\n" + (state.message || "unknown"),
-        style: Object.assign({}, containerStyle, {
-          color: "var(--dsh-text-warning, #f5a623)",
-        }),
-      },
-      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
-      " ",
-      React.createElement("span", { style: { fontWeight: 600 } }, "⚠")
+      { style: containerStyle },
+      React.createElement(
+        "span",
+        {
+          title: "dsh-musage · MiniMax (失败)\n" + (state.message || "unknown"),
+          style: Object.assign({}, innerBaseStyle, {
+            color: "var(--dsh-text-warning, #f5a623)",
+            cursor: "help",
+          }),
+        },
+        React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+        React.createElement("span", { style: { fontWeight: 600 } }, "⚠")
+      )
     );
   }
 
@@ -124,22 +127,31 @@ function OverlayFloater(timer) {
 
   return React.createElement(
     "div",
-    {
-      title:
-        "dsh-musage · MiniMax\n" +
-        "5h: " + fiveHrPct + "  " + (state.fiveHour ? formatResetsIn(state.fiveHour.resetsAt) : "") + "\n" +
-        "7d: " + weeklyPct + "  " + (state.weekly ? formatResetsIn(state.weekly.resetsAt) : ""),
-      style: Object.assign({}, containerStyle, {
-        color: "var(--dsh-text, #eee)",
-      }),
-    },
-    React.createElement("span", { style: { fontWeight: 500, opacity: 0.7 } }, "MiniMax"),
-    " ",
-    React.createElement("span", { style: { fontWeight: 600 } }, fiveHrPct),
-    " ",
-    React.createElement("span", { style: { opacity: 0.5, fontSize: 10 } }, "·"),
-    " ",
-    React.createElement("span", { style: { fontWeight: 600 } }, weeklyPct)
+    { style: containerStyle },
+    React.createElement(
+      "span",
+      {
+        title:
+          "dsh-musage · MiniMax\n" +
+          "5h: " + fiveHrPct + "  " + (state.fiveHour ? formatResetsIn(state.fiveHour.resetsAt) : "") + "\n" +
+          "7d: " + weeklyPct + "  " + (state.weekly ? formatResetsIn(state.weekly.resetsAt) : ""),
+        style: Object.assign({}, innerBaseStyle, {
+          color: "var(--dsh-text-muted, #888)",
+        }),
+      },
+      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+      React.createElement("span", { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, fiveHrPct),
+      React.createElement(
+        "span",
+        { style: { opacity: 0.5, fontSize: 10 } },
+        "·"
+      ),
+      React.createElement(
+        "span",
+        { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } },
+        weeklyPct
+      )
+    )
   );
 }
 
@@ -151,15 +163,15 @@ return {
     if (slots === undefined) return;
     const timer = ctx.timer;
 
-    slots.inject("shell.overlay", () => {
+    slots.inject("conversation.input.left", () => {
       return slots.register(
         {
-          name: "shell.overlay",
+          name: "conversation.input.left",
           id: "musage-minimax",
-          order: 50,
+          order: 0,
           label: "MiniMax",
         },
-        function () { return OverlayFloater(timer); }
+        function () { return InlineReadout(timer); }
       );
     });
   },
