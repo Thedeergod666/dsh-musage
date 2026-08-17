@@ -205,3 +205,61 @@ if (hit) apiKey = hit.value
 [v] 复用 DSH 已配 MINIMAX_*_API_KEY
 [ ] 待验证: minimax-cn API 实际响应是否被 DSH 沙箱出口允许
 ```
+
+## 12. `SubprocessStdio` 是**对象**不是数组 (v0.0.15 修)
+
+**症状** (调试走了 N 个版本才定位):
+```
+fetch 异常: Cannot read properties of undefined (reading 'maxBytes')
+```
+
+**根因**: DSH `SubprocessStdio` 协议结构是:
+```ts
+interface SubprocessStdio {
+  stdin: SubprocessStdinMode;
+  stdout: SubprocessOutputMode;
+  stderr: SubprocessOutputMode;
+}
+```
+
+是**对象** `{ stdin, stdout, stderr }`, **不是数组** `[]`。
+
+**早期错误修复 (v0.0.4)**: 误以为是字符串 `'collect'` 错, 改成 `{ maxBytes: N }` 对象形式. 但**结构仍然是数组**:
+```js
+stdio: ['ignore', { maxBytes: 8MB }, { maxBytes: 64KB }]  // ❌ 错
+```
+
+DSH 内部读 `stdio.stdout.maxBytes` 时, 数组没有 `.stdout` 属性 → undefined → 抛错.
+
+**正确 (v0.0.15)**:
+```js
+stdio: {
+  stdin: 'ignore',
+  stdout: { maxBytes: 8 * 1024 * 1024 },
+  stderr: { maxBytes: 64 * 1024 },
+}  // ✅ 对
+```
+
+**调试方法** (发现这个 bug 用了 v0.0.13 → v0.0.14): 在 host.js 的 spawn 前后加 `console.log`, 然后读 DSH 进程日志:
+```bash
+tail -f /private/tmp/dsh.log  # macOS 默认日志
+```
+plugin 的 `console.log` 会进 DSH 主进程的 stdout → 写进 `/private/tmp/dsh.log`.
+
+## 13. Slot 位置选择 (input.left vs input.right vs input.dock vs composer.dock vs sidebar.footer.action vs shell.overlay)
+
+| Slot | kind | scope | 实际位置 | 适用 |
+|---|---|---|---|---|
+| `conversation.composer.dock` | list | session | composer 卡**下方** (跟 DSH ship 的 stats line 并列) | 不推荐 — 跟 stats line 抢位置 |
+| `conversation.input.dock` | list | session | composer 卡**上方**自己的行 (full width) | 适合长 readout, 右对齐用 text-align |
+| `conversation.input.left` | list | session | composer 卡内, `Full access` 右边 | ✅ 紧邻 model select 左侧, **最贴** minimax |
+| `conversation.input.model` | single | session | model select (DSH ship 独占) | 不可注册 |
+| `conversation.input.right` | list | session | composer 卡内, model select 右边 (紧邻 send 按钮) | 不适合 "minimax 旁边" |
+| `sidebar.footer.action` | list | root | 侧栏底部 | 离 composer 远, 但永远在 |
+| `shell.overlay` | list | root | frame-wide 浮层 | 完全独立, 可 position: fixed 任意角落 |
+
+**最贴 minimax select** 的 slot 是 `conversation.input.left`, 但右对齐需要 `width:100% + text-align:right` 容器级方案 (因为 input.left 容器不是 flex, `marginLeft: auto` 不生效).
+
+**Slot 容器布局限制**: `input.left`/`input.right` 容器是 normal flow (非 flex), entry 默认 inline 紧邻. `shell.overlay` 是 frame-wide 浮层, layer click-through, entry 自管 pointer events.
+
+**最终方案 (v0.0.13)**: `input.left` + `width:100%` + `text-align:right` 容器, 内部 `display:inline-block` span 只占自己宽度, 被父容器 text-align 推到右侧.

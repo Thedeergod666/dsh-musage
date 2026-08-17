@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.0.15 — 2026-08-14
+
+### Fixed
+- **CRITICAL**: `SubprocessStdio` 协议是**对象** `{stdin, stdout, stderr}`, 不是数组
+- v0.0.4 误改 `'collect'` 字符串 → `{maxBytes}` 对象, 但**结构还是数组**, DSH 内部读 `stdio.stdout.maxBytes` 时数组没 `.stdout` 属性 → undefined → 抛错
+- 修正: `stdio: { stdin: 'ignore', stdout: { maxBytes: 8MB }, stderr: { maxBytes: 64KB } }`
+- 验证: DSH 日志显示 `exitCode=0 statusCode=200 parsed.ok=true fiveHour=18% remaining=82%`
+
+### Notes
+- 这是 v0.0.1 → v0.0.15 共 15 版的**核心**修复
+- 之前所有"位置问题"都搞错了方向, 真正的根因一直没暴露, 因为错误信息误导 (`maxBytes undefined` 看似错在 maxBytes 字段, 实际是 stdio 结构)
+
+## v0.0.14 — 2026-08-14
+
+### Added
+- Host 全链路 `console.log` 诊断 (8 处: resolveExecutable / spawn / done / stderr / statusCode / body / parsed)
+- 通过读 `/private/tmp/dsh.log` 定位 spawn 抛异常的根因
+
+## v0.0.13 — 2026-08-14
+
+### Changed
+- Slot: `input.left` (位置对) + `width:100%` + `text-align:right` (右对齐)
+- 之前 v0.0.8 → v0.0.12 一直搞错, 实际 input.left 容器不是 flex, `marginLeft:auto` 不生效
+- 用容器级 text-align: right 解决
+
+## v0.0.12 — 2026-08-14
+
+### Tried
+- `shell.overlay` 浮窗 `top:12 right:130` (估算 minimax 位置)
+- 用户反馈"完全跑错地方了", 才意识到 input.left 位置本来就对, 缺的是右对齐
+
 ## v0.0.7 — 2026-08-14
 
 ### Changed
