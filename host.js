@@ -177,11 +177,14 @@ return {
       if (curlPath) return curlPath;
       const subprocess = ctx.get("subprocess");
       if (!subprocess) {
+        console.error("[musage] subprocess service 不可用 (ctx.get returned undefined)");
         throw new Error("subprocess service 不可用");
       }
       try {
         curlPath = await subprocess.resolveExecutable("curl");
+        console.log("[musage] resolveExecutable('curl') -> " + curlPath);
       } catch (e) {
+        console.error("[musage] resolveExecutable('curl') 失败: " + (e && e.stack || e));
         throw new Error("找不到 curl: " + (e && e.message || String(e)));
       }
       return curlPath;
@@ -191,33 +194,49 @@ return {
       const subprocess = ctx.get("subprocess");
       if (!subprocess) throw new Error("subprocess service 不可用");
       const c = await resolveCurl();
-      const handle = subprocess.spawn({
-        argv: [
-          c,
-          "-sS",
-          "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
-          "-w", "\n%{http_code}",
-          "-H", "Authorization: Bearer " + key,
-          "-H", "Accept: application/json",
-          url,
-        ],
-        cwd: "/",
-        // SubprocessCollect 对象形式 (不是 'collect' 字符串): stdio 上限 8MB stdout, 64KB stderr.
-        // 'collect' 字符串会让 DSH 内部 .maxBytes 读 undefined 抛错.
-        stdio: [
-          "ignore",
-          { maxBytes: 8 * 1024 * 1024 },
-          { maxBytes: 64 * 1024 },
-        ],
-        graceMs: REQUEST_TIMEOUT_MS,
-      });
-      const outcome = await handle.done;
+      let handle;
+      try {
+        handle = subprocess.spawn({
+          argv: [
+            c,
+            "-sS",
+            "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
+            "-w", "\n%{http_code}",
+            "-H", "Authorization: Bearer " + key,
+            "-H", "Accept: application/json",
+            url,
+          ],
+          cwd: "/",
+          // SubprocessCollect 对象形式 (不是 'collect' 字符串): stdio 上限 8MB stdout, 64KB stderr.
+          // 'collect' 字符串会让 DSH 内部 .maxBytes 读 undefined 抛错.
+          stdio: [
+            "ignore",
+            { maxBytes: 8 * 1024 * 1024 },
+            { maxBytes: 64 * 1024 },
+          ],
+          graceMs: REQUEST_TIMEOUT_MS,
+        });
+        console.log("[musage] spawn OK pid=" + handle.pid + " argv[0]=" + c);
+      } catch (e) {
+        console.error("[musage] spawn 抛异常: " + (e && e.stack || e));
+        throw e;
+      }
+      let outcome;
+      try {
+        outcome = await handle.done;
+        console.log("[musage] done exitCode=" + outcome.exitCode + " signal=" + outcome.signal);
+      } catch (e) {
+        console.error("[musage] await done 抛异常: " + (e && e.stack || e));
+        throw e;
+      }
       const stdout = handle.collected && handle.collected.stdout
         ? handle.collected.stdout.readFrom(0)
         : { text: "", nextOffset: 0, lossy: false };
       const stderr = handle.collected && handle.collected.stderr
         ? handle.collected.stderr.readFrom(0)
         : { text: "", nextOffset: 0, lossy: false };
+      console.log("[musage] stdout.len=" + stdout.text.length + " stderr.len=" + stderr.text.length);
+      console.log("[musage] stderr.head=" + stderr.text.slice(0, 300));
       if (outcome.exitCode !== 0) {
         return {
           ok: false,
@@ -226,6 +245,7 @@ return {
         };
       }
       const { body, statusCode } = parseCurlOutput(stdout.text);
+      console.log("[musage] statusCode=" + statusCode + " body.len=" + body.length);
       if (statusCode === 0) {
         return { ok: false, kind: "network", message: "curl 输出没拿到 HTTP 状态: " + stdout.text.slice(0, 200) };
       }
@@ -238,6 +258,7 @@ return {
         };
       }
       const parsed = parseMinimax(body);
+      console.log("[musage] parsed.ok=" + parsed.ok + " fiveHour=" + (parsed.ok ? JSON.stringify(parsed.fiveHour) : "") + " err=" + (parsed.ok ? "" : parsed.message));
       if (parsed.ok) {
         parsed.url = url;
       }
