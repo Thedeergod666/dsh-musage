@@ -63,20 +63,71 @@ function useQuota(timer) {
 function InlineReadout(timer) {
   const state = useQuota(timer);
 
-  // 容器: width 100% (占满 input.left slot), text-align right → 右对齐贴 minimax.
+  // v0.0.16: 容器是 DSH .trailing flex 容器.
+  //   flex 布局里 `width:100% + text-align: right` 无效 (text-align 只对 inline 流起作用).
+  //   正确做法: `display: inline-flex; margin-left: auto` —— 前面兄弟占左边空间,
+  //   空白挤到 entry 左边, entry 自身贴容器右 (即贴 model select).
   const containerStyle = {
-    width: "100%",
-    textAlign: "right",
+    display: "inline-flex",
+    alignItems: "center",
+    marginLeft: "auto",        // 推自己到 .trailing flex 容器最右 → 贴 model select
+    gap: 4,
+    padding: "2px 8px",
     fontSize: 11,
     fontVariantNumeric: "tabular-nums",
     userSelect: "none",
   };
 
-  // 内部 span: inline-block, 只占自己宽度, 被父容器 text-align right 推到右侧.
-  const innerBaseStyle = {
-    display: "inline-block",
-    padding: "2px 8px",
-  };
+  // 加载中 / 失败 / 成功都用同一个容器, 只换 color.
+  const color = state.loaded
+    ? (state.ok ? "var(--dsh-text-muted, #888)" : "var(--dsh-text-warning, #f5a623)")
+    : "var(--dsh-text-muted, #888)";
+
+  // 加载中
+  if (!state.loaded) {
+    return React.createElement(
+      "div",
+      {
+        title: "dsh-musage · MiniMax\n加载中...",
+        style: Object.assign({}, containerStyle, { color }),
+      },
+      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+      React.createElement("span", { style: { opacity: 0.6, fontSize: 10 } }, "···")
+    );
+  }
+
+  // 失败
+  if (!state.ok) {
+    return React.createElement(
+      "div",
+      {
+        title: "dsh-musage · MiniMax (失败)\n" + (state.message || "unknown"),
+        style: Object.assign({}, containerStyle, { color, cursor: "help" }),
+      },
+      React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+      React.createElement("span", { style: { fontWeight: 600 } }, "⚠")
+    );
+  }
+
+  // 成功
+  const fiveHrPct = state.fiveHour ? formatPercent(state.fiveHour.usedPercent) : "—";
+  const weeklyPct = state.weekly ? formatPercent(state.weekly.usedPercent) : "—";
+
+  return React.createElement(
+    "div",
+    {
+      title:
+        "dsh-musage · MiniMax\n" +
+        "5h: " + fiveHrPct + "  " + (state.fiveHour ? formatResetsIn(state.fiveHour.resetsAt) : "") + "\n" +
+        "7d: " + weeklyPct + "  " + (state.weekly ? formatResetsIn(state.weekly.resetsAt) : ""),
+      style: Object.assign({}, containerStyle, { color }),
+    },
+    React.createElement("span", { style: { fontWeight: 500 } }, "MiniMax"),
+    React.createElement("span", { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, fiveHrPct),
+    React.createElement("span", { style: { opacity: 0.5, fontSize: 10 } }, "·"),
+    React.createElement("span", { style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, weeklyPct)
+  );
+}
 
   // 加载中
   if (!state.loaded) {
@@ -163,10 +214,14 @@ return {
     if (slots === undefined) return;
     const timer = ctx.timer;
 
-    slots.inject("conversation.input.left", () => {
+    // v0.0.16: 用 conversation.input.right (不是 .left!), 位置紧贴 model select 左侧.
+    // DSH 内部渲染: [rightItems, renderSlot("input.model"), ContextMeter, primary]
+    // 即我的 entry 在 model select 紧邻的左边, 这才是用户最初要的"minimax 旁边".
+    // .trailing 容器是 flex, margin-left: auto 把空白挤到 entry 左边 → entry 贴容器右 (即贴 model select).
+    slots.inject("conversation.input.right", () => {
       return slots.register(
         {
-          name: "conversation.input.left",
+          name: "conversation.input.right",
           id: "musage-minimax",
           order: 0,
           label: "MiniMax",
