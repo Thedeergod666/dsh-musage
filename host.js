@@ -207,13 +207,15 @@ return {
             url,
           ],
           cwd: "/",
-          // SubprocessCollect 对象形式 (不是 'collect' 字符串): stdio 上限 8MB stdout, 64KB stderr.
-          // 'collect' 字符串会让 DSH 内部 .maxBytes 读 undefined 抛错.
-          stdio: [
-            "ignore",
-            { maxBytes: 8 * 1024 * 1024 },
-            { maxBytes: 64 * 1024 },
-          ],
+          // SubprocessStdio 协议是**对象** { stdin, stdout, stderr }, 不是数组!
+          // v0.0.4 只把 'collect' 改成 {maxBytes}, 但结构还是数组 -> DSH 内部读
+          // stdio.stdout.maxBytes 时数组没有 .stdout 属性 -> undefined.
+          // v0.0.15: 改成对象形式.
+          stdio: {
+            stdin: "ignore",
+            stdout: { maxBytes: 8 * 1024 * 1024 },
+            stderr: { maxBytes: 64 * 1024 },
+          },
           graceMs: REQUEST_TIMEOUT_MS,
         });
         console.log("[musage] spawn OK pid=" + handle.pid + " argv[0]=" + c);
