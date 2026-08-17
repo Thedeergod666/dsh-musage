@@ -46,24 +46,45 @@ function InlineReadout(props, models, timer) {
   const [retrySeq, setRetrySeq] = React.useState(0);
 
   // 订阅 model directory 变化, 提取 active provider
+  // v0.0.18: service 名是 "modelDirectories" (DSH ModelDirectoryResolver super(ctx, "modelDirectories")),
+  //          不是 "models" (v0.0.17 写错, 导致 ctx.get undefined → 整个 component return → 啥都不显示).
+  //          加 fallback: 没 model 上下文时默认 'minimax' (DSH ship 几乎所有用户配了).
+  const modelsSvc = models;
   React.useEffect(() => {
-    if (!models || !props || !props.sessionId) return;
+    if (!modelsSvc || !props || !props.sessionId) {
+      console.log("[musage-client] skip: no models or no sessionId. models=" + !!modelsSvc + " sessionId=" + (props && props.sessionId) + " → fallback default 'minimax'");
+      setProvider("minimax");
+      return;
+    }
     let directory;
     try {
-      directory = models.directoryFor(props.sessionId);
+      directory = modelsSvc.directoryFor(props.sessionId);
+      console.log("[musage-client] directoryFor ok: " + (directory ? "have directory" : "null"));
     } catch (e) {
-      return; // no scope, bail
+      console.error("[musage-client] directoryFor 抛异常: " + (e && e.stack || e) + " → fallback default 'minimax'");
+      setProvider("minimax");
+      return;
     }
-    if (!directory || !directory.store) return;
+    if (!directory || !directory.store) {
+      console.log("[musage-client] directory 缺失 → fallback default 'minimax'");
+      setProvider("minimax");
+      return;
+    }
     const updateProvider = () => {
-      const snap = directory.store.getSnapshot();
-      const p = readActiveProvider(snap);
-      setProvider(p);
+      try {
+        const snap = directory.store.getSnapshot();
+        const p = readActiveProvider(snap);
+        console.log("[musage-client] model 变化: current.provider=" + (snap && snap.current && snap.current.provider) + " → mapped=" + p);
+        setProvider(p || "minimax");
+      } catch (e) {
+        console.error("[musage-client] readActiveProvider 抛异常: " + (e && e.stack || e));
+        setProvider("minimax");
+      }
     };
     updateProvider();
     const stop = directory.store.subscribe(updateProvider);
     return () => { stop(); };
-  }, [models, props && props.sessionId]);
+  }, [modelsSvc, props && props.sessionId]);
 
   // 每次 provider 切换或 timer 变化, 重 fetch
   React.useEffect(() => {
@@ -180,13 +201,13 @@ function renderDisplay(provider, d) {
 }
 
 return {
-  inject: ["timer", "models"],
+  inject: ["timer", "modelDirectories"],
 
   async apply(ctx) {
     const slots = ctx.get("slots");
     if (slots === undefined) return;
     const timer = ctx.timer;
-    const models = ctx.get("models");
+    const models = ctx.get("modelDirectories");
 
     slots.inject("conversation.input.right", () => {
       return slots.register(
