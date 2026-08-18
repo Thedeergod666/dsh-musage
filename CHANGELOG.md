@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.1 — 2026-08-18
+
+### Fixed
+- **client 端 `slots` service 注入声明缺失**: `dsh/client.js` 的 `apply(ctx)` 里访问 `ctx.slots`,但 `exports.inject` 只声明了 `timer` / `modelDirectories`。Cordis 的 `ctx.<name>` proxy 要求属性必须先在 inject 数组里声明, 否则启动期抛 `cannot get property "slots" without inject`, client loader entry 整个拒绝挂载, DSH Web UI 顶部 composer 的 quota readout 不渲染。
+  - 修复: `exports.inject = ["slots", "timer", "modelDirectories"]`
+  - 影响版本: v0.1.0 (今天发布的 bundle 形态首版)
+  - 触发条件: `dsh` 启用 client half 加载 (`platform: web` profile) 时必触发
+
 ## v0.1.0 — 2026-08-18
 
 ### Changed

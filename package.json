@@ -1,6 +1,6 @@
 {
   "name": "dsh-musage",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Coding-plan quota and balance readout for the DSH composer toolbar: MiniMax, DeepSeek, Kimi, OpenRouter and Zhipu windows follow the selected model; API keys are reused from DSH model settings.",
   "type": "module",
   "license": "MIT",

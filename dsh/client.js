@@ -283,7 +283,7 @@ window.__ModuleLoader__.load({
     }
 
     exports.apply = apply;
-    exports.inject = ["timer", "modelDirectories"];
+    exports.inject = ["slots", "timer", "modelDirectories"];
     return module.exports;
   },
 });
