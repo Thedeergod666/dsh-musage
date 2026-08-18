@@ -1,0 +1,47 @@
+{
+  "name": "dsh-musage",
+  "version": "0.1.0",
+  "description": "Coding-plan quota and balance readout for the DSH composer toolbar: MiniMax, DeepSeek, Kimi, OpenRouter and Zhipu windows follow the selected model; API keys are reused from DSH model settings.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Thedeergod666/dsh-musage.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Thedeergod666/dsh-musage/issues"
+  },
+  "homepage": "https://github.com/Thedeergod666/dsh-musage#readme",
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "cordis-plugin",
+    "deepseek-harness",
+    "usage",
+    "quota",
+    "coding-plan",
+    "musage"
+  ],
+  "files": [
+    "dsh",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "docs"
+  ],
+  "exports": {
+    ".": "./dsh/index.js",
+    "./client": "./dsh/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true
+    }
+  }
+}

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.0 — 2026-08-18
+
+### Changed
+- **转可安装 bundle 形态** (目标: dsh-market / awesome-dsh-plugin 上架):
+  - 新增 `package.json`: `dsh.bundle` manifest (`patch: ./cordis.patch.yml`) + `dsh.client` manifest (`platform: web`), exports `.` → `dsh/index.js`, `./client` → `dsh/client.js`, 零 npm 依赖
+  - 新增 `cordis.patch.yml`: 插入 `musage` 行 (bundle 层挂载)
+  - host 半边: `dsh/index.js` (ESM `export const name/inject` + `export function apply(ctx)`); 服务访问 `ctx.get(name)` → inject 属性访问 `ctx.<name>`
+  - client 半边: `dsh/client.js` (手写 lazy-CJS `window.__ModuleLoader__.load` 工厂, 同 modlens 形态); `React` 由闭包符号改 `require('react')`
+  - **client→host 通道改造**: `harness.handle('quota:fetch')` / `host.call` → webServer 路由 `GET /musage/quota?provider=<p>&force=1` (JSON 返回同一 result 对象), 路由带同源 loopback 信任检查
+- 安装方式: `dsh plugin --profile web add github:Thedeergod666/dsh-musage` (或本地 `add .`, link 安装)
+- README / deploy.md / docs/architecture.md 同步更新
+
+### Removed
+- `host.js` / `client.js` (cordis_define 手动部署形态退役; 旧动态插件请在 设置 → Plugins 停用避免双份轮询)
+
+### Notes
+- 端到端验证 (本地 link 安装): pnpm 安装 + `reconcilePlugins` 自动追加 bundles 列表 ✅; host 路由 / client widget 于下次 `dsh web` 重启生效 (bundle 层持久化已就位)
+- 上架材料: 注册表 PR 条目见 `docs/awesome-dsh-plugin-entry.yml` (仓库满 1 天后提交)
+
 ## v0.0.21 — 2026-08-14
 
 ### Added

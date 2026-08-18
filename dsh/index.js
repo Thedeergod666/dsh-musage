@@ -1,18 +1,20 @@
-// host.js — DSH Host 半边
+// dsh/index.js — DSH Host 半边 (bundle 形态)
 //
 // 责任: 多 provider 通用 quota fetch.
 //       调 DSH 自己的 `credentials` Service 拿用户已配的 API Key;
 //       用 `subprocess` 调 `curl` 拉各 provider 的用量 (DSH 部署没有
 //       fetch provider, 且 DSH `web.fetch` 协议本身不允许加 Authorization
-//       header —— 只能走 curl); 30s 内存缓存 + 指数退避; 暴露
-//       host.handle('quota:fetch', { provider, force }) 给 Client 端调用.
+//       header —— 只能走 curl); 30s 内存缓存 + 指数退避.
 //
-// v0.0.17: 通用化. 之前 v0.0.1 → v0.0.16 hardcode minimax, 现在:
-//   - PROVIDERS map 注册多个 source (minimax / deepseek)
-//   - handler 接受 { provider: 'minimax' | 'deepseek', force?: bool }
-//   - 解析器按 provider 分发 (parseMinimax / parseDeepseekBalance)
+// 形态说明 (v0.1.0): 本文件是 npm/GitHub 可安装 bundle 的 host 入口,
+// 通过仓库根 cordis.patch.yml 的 `musage` 行挂载 (package.json 的
+// dsh.bundle manifest). 旧的 cordis_define 手动部署形态 (host.js 函数体)
+// 已退役 —— 服务访问从 `ctx.get(name)` 改为 inject 声明后的属性访问
+// `ctx.<name>`, client 调用入口从 `harness.handle('quota:fetch')` 改为
+// webServer 路由 `GET /musage/quota?provider=<p>&force=1` (JSON 返回同
+// 一个 result 对象, client 半边用同源 fetch 调).
 //
-// 关键决策:
+// 关键决策 (继承自 host.js v0.0.21):
 //   - DSH 在用户已配的 <provider> 路由都按 `<UPPER_PROVIDER>_API_KEY` 命名规范存储
 //     (推导规则见 dsh-client-ui-settings-models/lib/client.js:476). 例如
 //     `minimax-cn` → `MINIMAX_CN_API_KEY`, `deepseek` → `DEEPSEEK_API_KEY`.
@@ -21,9 +23,6 @@
 //     密钥安全 + 用户配置零重复.
 //   - `subprocess` 调 curl: DSH 部署里没有 fetch provider, 且 WebFetchProvider
 //     协议只支持 GET + url, 不能加 headers.
-//
-// 部署: 这个文件的**函数体**会被原样塞进 `cordis_define` 的 `code.host` 字段.
-//       不能出现 import / require / JSX / TypeScript 类型注解 / 全局变量.
 
 const POLL_INTERVAL_MS = 60_000;
 const CACHE_TTL_MS = 30_000;
@@ -31,16 +30,19 @@ const BACKOFF_BASE_MS = 5_000;
 const BACKOFF_MAX_MS = 30 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 15_000;
 
+export const name = "musage";
+export const inject = ["credentials", "subprocess", "timer"];
+
 // ============================================================
 // Provider 注册表
 // ============================================================
 // 每个 provider:
 //   - refs: 候选 credentials ref 列表, 按优先级尝试
-//   - urls: { primary, fallback? } 端点
+//   - urls: { ref: endpoint } 端点
 //   - parse: (body) => { ok, ...data | kind, message }
 //
 // minimax: percent-based / count-based 双 schema (来自 ccswitch 逆向)
-// deepseek: user/balance 端点, 返回 USD 余额数组 (来自 Musage deepseek.rs)
+// deepseek: user/balance 端点, 返回 CNY/USD 余额 (来自 Musage deepseek.rs)
 
 const PROVIDERS = {
   minimax: {
@@ -174,9 +176,6 @@ function parseMinimaxWindow(entry, prefix, legacyRemaining, legacyTotal, endTime
 //   { "is_available": true,
 //     "balance_infos": [ { "currency": "CNY", "total_balance": "43.97",
 //                            "granted_balance": "0.00", "topped_up_balance": "43.97" } ] }
-//
-// v0.0.19 之前我抄的是 ccswitch 老 schema ({"balance": ["10.50"]}) 错, 真实字段是
-// balance_infos[].total_balance (string 数字, 需要 parseFloat).
 
 function parseDeepseekBalance(body) {
   let json;
@@ -218,13 +217,8 @@ function parseDeepseekBalance(body) {
 }
 
 // ----- kimi parser (Musage kimi.rs schema: 5h 窗口 + 7d 窗口) -----
-// 真实响应 (用户配置正确时):
 //   { "limits": [ { "detail": { "limit": 100, "remaining": 72, "resetTime": "..." } } ],
 //     "usage": { "limit": 1000, "remaining": 742, "resetTime": 1749840000 } }
-//
-// 5h 窗口: limits[].detail.{limit, remaining, resetTime}
-// 7d 窗口: usage.{limit, remaining, resetTime}
-// 容错: resetTime 字符串 (ISO) 或数字 (epoch 秒/毫秒) 都能解析.
 
 function parseKimiResponse(body) {
   let json;
@@ -282,8 +276,6 @@ function parseKimiResetTime(v) {
 }
 
 // ----- openrouter parser (Musage openrouter.rs: total_credits - total_usage) -----
-// 真实响应: { "data": { "total_credits": 95, "total_usage": 92.85 } }
-// 余额 = total_credits - total_usage, USD.
 
 function parseOpenrouterResponse(body) {
   let json;
@@ -320,18 +312,10 @@ function parseOpenrouterResponse(body) {
 }
 
 // ----- zhipu (智谱 GLM Coding Plan) parser (Musage zhipu.rs) -----
-// 真实响应:
 //   { "code": 200, "success": true,
-//     "data": { "level": "lite",
-//                "limits": [
-//                  { "type": "CREDIT_LIMIT", "unit": 3, "number": 5,
-//                    "usage": 2000, "currentValue": 2010, "remaining": 0,
-//                    "percentage": 100, "nextResetTime": 1786969101067 },
-//                  { "type": "CREDIT_LIMIT", "unit": 6, ... }
-//                ] } }
-//
+//     "data": { "limits": [ { "type": "CREDIT_LIMIT", "unit": 3, "usage": 2000,
+//                "remaining": 0, "percentage": 100, "nextResetTime": 1786969101067 }, ... ] } }
 // unit=3 是 5h 窗口, unit=6 是周窗口. percentage 直接是已用 0-100 (服务器算好).
-// 老版 TOKENS_LIMIT 没有 usage/remaining, 只用 percentage.
 
 function parseZhipuResponse(body) {
   let json;
@@ -416,201 +400,258 @@ function parseCurlOutput(rawText) {
   return { body, statusCode };
 }
 
-return {
-  inject: ["credentials", "subprocess", "timer"],
+// ----- 路由信任检查 (同源 loopback 才放行, 形态抄自 modlens) -----
 
-  apply(ctx) {
-    // 每个 (provider, ref) 一份 cache. 但实际我们想按 provider 一份.
-    // key: provider 名.
-    const cache = Object.create(null);
-    const activeRef = Object.create(null);
-    let curlPath = null;
+function isLoopbackHost(hostname) {
+  if (hostname === "localhost" || hostname === "::1" || hostname === "[::1]") return true;
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(hostname);
+  return !!m && Number(m[1]) === 127;
+}
 
-    async function loadApiKey(provider) {
-      const cfg = PROVIDERS[provider];
-      if (!cfg) return { ref: null, key: null };
-      if (activeRef[provider]) {
-        const credentials = ctx.get("credentials");
-        if (credentials) {
-          const hit = await credentials.resolve(activeRef[provider]);
-          if (hit && hit.value) return { ref: activeRef[provider], key: hit.value };
+function isTrustedRequest(req) {
+  const host = req.headers && req.headers.host;
+  if (typeof host !== "string" || host === "") return false;
+  let hostUrl;
+  try {
+    hostUrl = new URL("http://" + host);
+  } catch {
+    return false;
+  }
+  if (!isLoopbackHost(hostUrl.hostname)) return false;
+  if (req.headers["sec-fetch-site"] === "cross-site") return false;
+  const origin = req.headers.origin;
+  if (origin === undefined) return true;
+  try {
+    return new URL(origin).host === hostUrl.host;
+  } catch {
+    return false;
+  }
+}
+
+export function apply(ctx) {
+  // 每个 provider 一份 cache. key: provider 名.
+  const cache = Object.create(null);
+  const activeRef = Object.create(null);
+  let curlPath = null;
+
+  async function loadApiKey(provider) {
+    const cfg = PROVIDERS[provider];
+    if (!cfg) return { ref: null, key: null };
+    const credentials = ctx.credentials;
+    if (!credentials) return { ref: null, key: null };
+    if (activeRef[provider]) {
+      const hit = await credentials.resolve(activeRef[provider]);
+      if (hit && hit.value) return { ref: activeRef[provider], key: hit.value };
+    }
+    for (const ref of cfg.refs) {
+      try {
+        const hit = await credentials.resolve(ref);
+        if (hit && hit.value) {
+          activeRef[provider] = ref;
+          return { ref, key: hit.value };
         }
-      }
-      const credentials = ctx.get("credentials");
-      if (!credentials) return { ref: null, key: null };
-      for (const ref of cfg.refs) {
-        try {
-          const hit = await credentials.resolve(ref);
-          if (hit && hit.value) {
-            activeRef[provider] = ref;
-            return { ref, key: hit.value };
-          }
-        } catch (e) {}
-      }
-      return { ref: null, key: null };
+      } catch (e) {}
     }
+    return { ref: null, key: null };
+  }
 
-    async function resolveCurl() {
-      if (curlPath) return curlPath;
-      const subprocess = ctx.get("subprocess");
-      if (!subprocess) {
-        console.error("[musage] subprocess service 不可用 (ctx.get returned undefined)");
-        throw new Error("subprocess service 不可用");
-      }
-      try {
-        curlPath = await subprocess.resolveExecutable("curl");
-        console.log("[musage] resolveExecutable('curl') -> " + curlPath);
-      } catch (e) {
-        console.error("[musage] resolveExecutable('curl') 失败: " + (e && e.stack || e));
-        throw new Error("找不到 curl: " + (e && e.message || String(e)));
-      }
-      return curlPath;
+  async function resolveCurl() {
+    if (curlPath) return curlPath;
+    const subprocess = ctx.subprocess;
+    if (!subprocess) {
+      console.error("[musage] subprocess service 不可用 (inject 未生效)");
+      throw new Error("subprocess service 不可用");
     }
-
-    async function curlFetch(url, key, authStyle) {
-      const subprocess = ctx.get("subprocess");
-      if (!subprocess) throw new Error("subprocess service 不可用");
-      const c = await resolveCurl();
-      // zhipu 特殊: Authorization 不加 "Bearer " 前缀 (来自 Musage zhipu.rs 注释)
-      const authHeader = (authStyle === "raw")
-        ? "Authorization: " + key
-        : "Authorization: Bearer " + key;
-      let handle;
-      try {
-        handle = subprocess.spawn({
-          argv: [
-            c, "-sS",
-            "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
-            "-w", "\n%{http_code}",
-            "-H", authHeader,
-            "-H", "Accept: application/json",
-            url,
-          ],
-          cwd: "/",
-          stdio: {
-            stdin: "ignore",
-            stdout: { maxBytes: 8 * 1024 * 1024 },
-            stderr: { maxBytes: 64 * 1024 },
-          },
-          graceMs: REQUEST_TIMEOUT_MS,
-        });
-        console.log("[musage] [" + url + "] spawn OK pid=" + handle.pid);
-      } catch (e) {
-        console.error("[musage] spawn 抛异常: " + (e && e.stack || e));
-        throw e;
-      }
-      let outcome;
-      try {
-        outcome = await handle.done;
-        console.log("[musage] [" + url + "] done exitCode=" + outcome.exitCode + " signal=" + outcome.signal);
-      } catch (e) {
-        console.error("[musage] await done 抛异常: " + (e && e.stack || e));
-        throw e;
-      }
-      const stdout = handle.collected && handle.collected.stdout
-        ? handle.collected.stdout.readFrom(0)
-        : { text: "", nextOffset: 0, lossy: false };
-      const stderr = handle.collected && handle.collected.stderr
-        ? handle.collected.stderr.readFrom(0)
-        : { text: "", nextOffset: 0, lossy: false };
-      console.log("[musage] [" + url + "] stdout.len=" + stdout.text.length + " stderr.len=" + stderr.text.length);
-      if (outcome.exitCode !== 0) {
-        return {
-          ok: false,
-          kind: "network",
-          message: "curl 退出 " + outcome.exitCode + " · " + stderr.text.slice(0, 200),
-        };
-      }
-      const { body, statusCode } = parseCurlOutput(stdout.text);
-      console.log("[musage] [" + url + "] statusCode=" + statusCode + " body.len=" + body.length);
-      if (statusCode === 0) {
-        return { ok: false, kind: "network", message: "curl 输出没拿到 HTTP 状态: " + stdout.text.slice(0, 200) };
-      }
-      if (statusCode !== 200) {
-        return {
-          ok: false,
-          kind: classifyHttpStatus(statusCode),
-          httpStatus: statusCode,
-          message: "HTTP " + statusCode + " · " + body.slice(0, 200),
-        };
-      }
-      return { ok: true, body };
+    try {
+      curlPath = await subprocess.resolveExecutable("curl");
+      console.log("[musage] resolveExecutable('curl') -> " + curlPath);
+    } catch (e) {
+      console.error("[musage] resolveExecutable('curl') 失败: " + ((e && e.stack) || e));
+      throw new Error("找不到 curl: " + ((e && e.message) || String(e)));
     }
+    return curlPath;
+  }
 
-    async function fetchProviderQuota(provider) {
-      const cfg = PROVIDERS[provider];
-      if (!cfg) {
-        return { ok: false, kind: "other", message: "未知 provider: " + provider };
-      }
-      const { ref, key } = await loadApiKey(provider);
-      if (!key) {
-        return {
-          ok: false,
-          kind: "unconfigured",
-          message: "未配置 " + provider + " API Key (在 DSH 模型设置里配置对应 provider)",
-        };
-      }
-      const url = cfg.urls[ref] || cfg.urls[cfg.refs[0]];
-      let raw;
-      try {
-        raw = await curlFetch(url, key, cfg.authStyle);
-        if (!raw.ok) return raw;
-      } catch (e) {
-        return { ok: false, kind: "network", message: "fetch 异常: " + (e && e.message || String(e)) };
-      }
-      const parsed = cfg.parse(raw.body);
-      console.log("[musage] [" + provider + "] parsed.ok=" + parsed.ok + " display=" + (parsed.ok ? JSON.stringify(parsed.display) : "") + " err=" + (parsed.ok ? "" : parsed.message));
-      if (parsed.ok) {
-        parsed.url = url;
-        parsed.ref = ref;
-      }
-      return parsed;
+  async function curlFetch(url, key, authStyle) {
+    const subprocess = ctx.subprocess;
+    if (!subprocess) throw new Error("subprocess service 不可用");
+    const c = await resolveCurl();
+    // zhipu 特殊: Authorization 不加 "Bearer " 前缀 (来自 Musage zhipu.rs 注释)
+    const authHeader = (authStyle === "raw")
+      ? "Authorization: " + key
+      : "Authorization: Bearer " + key;
+    let handle;
+    try {
+      handle = subprocess.spawn({
+        argv: [
+          c, "-sS",
+          "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
+          "-w", "\n%{http_code}",
+          "-H", authHeader,
+          "-H", "Accept: application/json",
+          url,
+        ],
+        cwd: "/",
+        stdio: {
+          stdin: "ignore",
+          stdout: { maxBytes: 8 * 1024 * 1024 },
+          stderr: { maxBytes: 64 * 1024 },
+        },
+        graceMs: REQUEST_TIMEOUT_MS,
+      });
+      console.log("[musage] [" + url + "] spawn OK pid=" + handle.pid);
+    } catch (e) {
+      console.error("[musage] spawn 抛异常: " + ((e && e.stack) || e));
+      throw e;
     }
-
-    async function getQuota(provider) {
-      const c = cache[provider];
-      if (c && c.expiresAt > nowMs()) return c.value;
-      const result = await fetchProviderQuota(provider);
-      if (result.ok) {
-        cache[provider] = { value: result, expiresAt: nowMs() + CACHE_TTL_MS, streak: 0 };
-      } else {
-        const prev = c ? c.streak : 0;
-        const nextStreak = prev + 1;
-        const backoffMs = computeBackoffMs(nextStreak);
-        cache[provider] = { value: result, expiresAt: nowMs() + backoffMs, streak: nextStreak };
-      }
-      return result;
+    let outcome;
+    try {
+      outcome = await handle.done;
+      console.log("[musage] [" + url + "] done exitCode=" + outcome.exitCode + " signal=" + outcome.signal);
+    } catch (e) {
+      console.error("[musage] await done 抛异常: " + ((e && e.stack) || e));
+      throw e;
     }
-
-    // 后台轮询: 60s 拉一次每个已知 provider
-    const disposeTimer = ctx.timer.interval(async () => {
-      for (const provider of Object.keys(PROVIDERS)) {
-        try {
-          await getQuota(provider);
-        } catch (e) {}
-      }
-    }, POLL_INTERVAL_MS);
-    // 立即尝一次
-    ctx.timer.timeout(() => {
-      for (const provider of Object.keys(PROVIDERS)) {
-        getQuota(provider);
-      }
-    }, 100);
-
-    // Host handler: 客户端入口
-    const disposeHandle = harness.handle("quota:fetch", async (args) => {
-      const provider = (args && args.provider) || "minimax";
-      const forceRefresh = !!(args && args.force === true);
-      if (forceRefresh) cache[provider] = null;
-      return getQuota(provider);
-    });
-
-    ctx.effect(() => {
-      return () => {
-        try { disposeTimer(); } catch (e) {}
-        try { disposeHandle(); } catch (e) {}
-        for (const k of Object.keys(cache)) cache[k] = null;
+    const stdout = handle.collected && handle.collected.stdout
+      ? handle.collected.stdout.readFrom(0)
+      : { text: "", nextOffset: 0, lossy: false };
+    const stderr = handle.collected && handle.collected.stderr
+      ? handle.collected.stderr.readFrom(0)
+      : { text: "", nextOffset: 0, lossy: false };
+    console.log("[musage] [" + url + "] stdout.len=" + stdout.text.length + " stderr.len=" + stderr.text.length);
+    if (outcome.exitCode !== 0) {
+      return {
+        ok: false,
+        kind: "network",
+        message: "curl 退出 " + outcome.exitCode + " · " + stderr.text.slice(0, 200),
       };
+    }
+    const { body, statusCode } = parseCurlOutput(stdout.text);
+    console.log("[musage] [" + url + "] statusCode=" + statusCode + " body.len=" + body.length);
+    if (statusCode === 0) {
+      return { ok: false, kind: "network", message: "curl 输出没拿到 HTTP 状态: " + stdout.text.slice(0, 200) };
+    }
+    if (statusCode !== 200) {
+      return {
+        ok: false,
+        kind: classifyHttpStatus(statusCode),
+        httpStatus: statusCode,
+        message: "HTTP " + statusCode + " · " + body.slice(0, 200),
+      };
+    }
+    return { ok: true, body };
+  }
+
+  async function fetchProviderQuota(provider) {
+    const cfg = PROVIDERS[provider];
+    if (!cfg) {
+      return { ok: false, kind: "other", message: "未知 provider: " + provider };
+    }
+    const { ref, key } = await loadApiKey(provider);
+    if (!key) {
+      return {
+        ok: false,
+        kind: "unconfigured",
+        message: "未配置 " + provider + " API Key (在 DSH 模型设置里配置对应 provider)",
+      };
+    }
+    const url = cfg.urls[ref] || cfg.urls[cfg.refs[0]];
+    let raw;
+    try {
+      raw = await curlFetch(url, key, cfg.authStyle);
+      if (!raw.ok) return raw;
+    } catch (e) {
+      return { ok: false, kind: "network", message: "fetch 异常: " + ((e && e.message) || String(e)) };
+    }
+    const parsed = cfg.parse(raw.body);
+    console.log("[musage] [" + provider + "] parsed.ok=" + parsed.ok + " display=" + (parsed.ok ? JSON.stringify(parsed.display) : "") + " err=" + (parsed.ok ? "" : parsed.message));
+    if (parsed.ok) {
+      parsed.url = url;
+      parsed.ref = ref;
+    }
+    return parsed;
+  }
+
+  async function getQuota(provider) {
+    const c = cache[provider];
+    if (c && c.expiresAt > nowMs()) return c.value;
+    const result = await fetchProviderQuota(provider);
+    if (result.ok) {
+      cache[provider] = { value: result, expiresAt: nowMs() + CACHE_TTL_MS, streak: 0 };
+    } else {
+      const prev = c ? c.streak : 0;
+      const nextStreak = prev + 1;
+      const backoffMs = computeBackoffMs(nextStreak);
+      cache[provider] = { value: result, expiresAt: nowMs() + backoffMs, streak: nextStreak };
+    }
+    return result;
+  }
+
+  // 后台轮询: 60s 拉一次每个已知 provider (预热缓存)
+  const disposeTimer = ctx.timer.interval(async () => {
+    for (const provider of Object.keys(PROVIDERS)) {
+      try {
+        await getQuota(provider);
+      } catch (e) {}
+    }
+  }, POLL_INTERVAL_MS);
+  // 立即尝一次
+  ctx.timer.timeout(() => {
+    for (const provider of Object.keys(PROVIDERS)) {
+      getQuota(provider);
+    }
+  }, 100);
+
+  // Client 入口: webServer 路由 (web profile 下存在; headless 部署没有该
+  // service, scoped ctx.inject 保证只在它出现时挂载, 其余环境零副作用).
+  // GET /musage/quota?provider=<p>&force=1 → 200 + result JSON
+  // (result 与旧 harness.handle('quota:fetch') 返回的同一个对象).
+  if (typeof ctx.inject === "function") {
+    ctx.inject(["webServer"], (scope) => {
+      try {
+        scope.webServer.register({
+          name: "musage-quota",
+          kind: "exact",
+          path: "/musage/quota",
+          handler: async (req, res) => {
+            const send = (status, body) => {
+              res.writeHead(status, { "content-type": "application/json" });
+              res.end(JSON.stringify(body));
+            };
+            try {
+              if (!isTrustedRequest(req)) {
+                send(403, { ok: false, kind: "forbidden", message: "request refused: same-origin loopback only" });
+                return;
+              }
+              if (req.method !== "GET") {
+                send(405, { ok: false, kind: "other", message: "method not allowed" });
+                return;
+              }
+              const params = new URL(req.url, "http://localhost").searchParams;
+              const provider = params.get("provider") || "minimax";
+              const forceRefresh = params.get("force") === "1";
+              if (!PROVIDERS[provider]) {
+                send(404, { ok: false, kind: "other", message: "未知 provider: " + provider });
+                return;
+              }
+              if (forceRefresh) cache[provider] = null;
+              send(200, await getQuota(provider));
+            } catch (e) {
+              send(200, { ok: false, kind: "other", message: String((e && e.message) || e) });
+            }
+          },
+        });
+        console.log("[musage] route GET /musage/quota registered");
+      } catch (e) {
+        console.error("[musage] quota 路由注册失败: " + ((e && e.stack) || e));
+      }
     });
-  },
-};
+  }
+
+  ctx.effect(() => {
+    return () => {
+      try { disposeTimer(); } catch (e) {}
+      for (const k of Object.keys(cache)) cache[k] = null;
+    };
+  });
+}

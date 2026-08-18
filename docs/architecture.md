@@ -1,6 +1,6 @@
 # 架构
 
-## 整体结构 (v0.0.21)
+## 整体结构 (v0.1.0)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -14,9 +14,9 @@
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
               ▲                                  │
-              │ host.call (JSON)                │ host.handle
-              │ "quota:fetch"                  │ (后台轮询 / 缓存)
-              │ {provider: 'minimax'|'deepseek'|...}
+              │ 同源 fetch (JSON)               │ webServer 路由
+              │ GET /musage/quota              │ (后台轮询 / 缓存)
+              │ ?provider=minimax|deepseek|...
               ▼                                  ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ DSH host (Node.js)                                          │
@@ -42,8 +42,8 @@ Client 端:
 │ InlineReadout (React)                                       │
 │  - useEffect subscribe ctx.modelDirectories.directoryFor(sessionId)│
 │  - 状态变化 → setProvider(route → mapped)                  │
-│  - useEffect 依赖 [provider, timer] → host.call('quota:fetch',  │ 
-│    {provider})                                              │
+│  - useEffect 依赖 [provider, timer] → fetch('/musage/quota
+│    ?provider=<p>')                                          │
 │  - renderDisplay 按 provider 分发 5h/7d 双窗 或 余额         │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -96,7 +96,7 @@ Client 端:
 - 失败时 client 显示 `Provider ⚠` (黄), hover 看具体错误 (`HTTP 401 · 余额 字段为空` 等), 不刷屏
 
 ### 6. 调试方法 (核心经验)
-host.js 的 `console.log` 打 `/private/tmp/dsh.log` (DSH 进程 stdout). 加 8 处诊断点 (`resolveExecutable / spawn / done / stderr / statusCode / body / parsed`), 15 步踩坑在 `docs/cordis-pitfalls.md` 沉淀.
+`dsh/index.js` (host 半边) 的 `console.log` 打 `/private/tmp/dsh.log` (DSH 进程 stdout). 加 8 处诊断点 (`resolveExecutable / spawn / done / stderr / statusCode / body / parsed`), 15 步踩坑在 `docs/cordis-pitfalls.md` 沉淀.
 
 ## 完整 package 演进
 
@@ -121,3 +121,4 @@ host.js 的 `console.log` 打 `/private/tmp/dsh.log` (DSH 进程 stdout). 加 8 
 | v0.0.19 | 修 `PROVIDER_ALIASES` 漏 `deepseek-official` (DSH 实际 provider id 带后缀) |
 | v0.0.20 | 修 DeepSeek 解析走 Musage 真实 schema (`balance_infos[].total_balance`, 不是老 ccswitch `balance[]`) |
 | v0.0.21 | 扩 5 个 provider (kimi / openrouter / zhipu) |
+| v0.1.0 | **转 bundle 形态**: `dsh plugin add` 可装, client→host 从 `host.call` 改同源 fetch `/musage/quota` 路由, host 服务访问从 `ctx.get()` 改 inject 属性访问 |

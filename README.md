@@ -8,7 +8,7 @@
 [![ai-usage](https://img.shields.io/badge/ai--usage-quota-brightgreen)](https://github.com/topics/ai-usage)
 [![coding-plan](https://img.shields.io/badge/coding--plan-monitor-yellow)](https://github.com/topics/coding-plan)
 [![MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
-[![v0.0.21](https://img.shields.io/badge/version-v0.0.21-blue.svg)](./CHANGELOG.md)
+[![v0.1.0](https://img.shields.io/badge/version-v0.1.0-blue.svg)](./CHANGELOG.md)
 [![5 providers](https://img.shields.io/badge/providers-5-orange.svg)](./docs/architecture.md)
 
 ![demo](docs/assets/demo.gif)
@@ -54,7 +54,7 @@
 | **鉴权凭证来源** | 本地 `keys.json` (Unix 0600, 原子写) | DSH `credentials` Service (`.credentials.yaml`) |
 | **跨屏置顶 / 系统托盘** | ✅ 私有 API | ❌ DSH 自身无此 slot |
 | **WebView 一键登录** | ✅ (xiaomi / anysearch / stepfun / kimi 总套餐) | ❌ DSH 无 WebView 创建接口 |
-| **发布渠道** | GitHub Releases (dmg / nsis / AppImage / deb / rpm) | DSH 运行时 Cordis Plugin (无独立分发, runtime 加载) |
+| **发布渠道** | GitHub Releases (dmg / nsis / AppImage / deb / rpm) | `dsh plugin add` / npm / dsh-market (bundle 形态) |
 
 **核心结论**: dsh-musage 是 Musage 在 DSH 内的**伴侣形态**, 不是替代品. 完整功能 (14 provider + 悬浮窗 + 托盘 + 一键登录) 仍然在 [Musage 桌面端](https://github.com/Thedeergod666/Musage). 本插件先做"DSH 内能用"路径, 5 个最常见 provider 已覆盖.
 
@@ -62,12 +62,18 @@
 
 ## 安装 / 部署
 
-DSH 插件运行时直接加载, 不需要 `pnpm install` 之类:
+一条命令安装 (v0.1.0 起为可安装 bundle, 与 dsh-market 装的插件同一机制):
+
+```sh
+dsh plugin --profile web add github:Thedeergod666/dsh-musage
+```
 
 1. 在 DSH 模型设置里配置好你要监控的 provider (minimax-cn / deepseek / zhipu 等)
-2. 复制 [`host.js`](./host.js) 和 [`client.js`](./client.js) 全文
-3. 详细步骤见 [`deploy.md`](./deploy.md)
+2. 跑上面的安装命令, 重启 `dsh web`
+3. 收录 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 注册表后, 也可在 设置 → Plugin Market 一键安装/更新
 4. 切到对应 model, DSH composer 工具栏里出现 `[Provider 5h X% | 7d Y%]` 或 `[Provider $X.XX]`
+
+本地开发 / 升级 / 故障排查见 [`deploy.md`](./deploy.md).
 
 ## 前置依赖
 
@@ -76,7 +82,7 @@ DSH 插件运行时直接加载, 不需要 `pnpm install` 之类:
 
 ## 架构
 
-参见 [`docs/architecture.md`](./docs/architecture.md) + [`docs/cordis-pitfalls.md`](./docs/cordis-pitfalls.md) (15 个踩坑沉淀).
+host 半边 [`dsh/index.js`](./dsh/index.js) (ESM: quota fetch + 缓存 + `GET /musage/quota` 路由), client 半边 [`dsh/client.js`](./dsh/client.js) (lazy-CJS: composer slot + 模型订阅). 参见 [`docs/architecture.md`](./docs/architecture.md) + [`docs/cordis-pitfalls.md`](./docs/cordis-pitfalls.md) (15 个踩坑沉淀).
 
 ## License
 

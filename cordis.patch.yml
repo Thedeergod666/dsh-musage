@@ -1,0 +1,6 @@
+# dsh bundle layer: mount the musage quota readout plugin. The host half is
+# the package root export (./dsh/index.js); the browser half loads via the
+# ./client export declared by the dsh.client manifest in package.json.
+- insert:
+    - id: musage
+      name: dsh-musage
