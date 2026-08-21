@@ -1,23 +1,3 @@
-# awesome-dsh-plugin 注册表收录 PR 材料
-#
-# 用法 (仓库创建满 1 天后, 2026-08-19 起):
-#   1. fork https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
-#   2. 把本文件内容存为 data/plugins/Thedeergod666__dsh-musage.yml
-#      (文件名规则: <owner>__<repo>.yml)
-#   3. cd awesome-dsh-plugin && npm ci && node scripts/generate-readme.mjs
-#   4. 提交 YAML + 重新生成的两个 README, 开 PR
-#   5. 可选截图: 在 data/screenshots.json 里加 (key 必须与下面 url 完全一致):
-#      "https://github.com/Thedeergod666/dsh-musage": [
-#        "https://raw.githubusercontent.com/Thedeergod666/dsh-musage/main/docs/assets/demo.gif"
-#      ]
-#      建议补 1-2 张 PNG 静态截图 (市场详情页 AppStore 式展示), GIF 会被
-#      README 自动提取兜底.
-#
-# 收录核对点 (维护者会逐字与代码比对):
-#   - "5 providers" 属实: minimax / deepseek / kimi / openrouter / zhipu
-#   - 描述只说功能, 无营销词
-#   - category=usage (用量与计费) 贴合插件实际做的事
-
 url: https://github.com/Thedeergod666/dsh-musage
 name: Thedeergod666/dsh-musage
 category: usage
