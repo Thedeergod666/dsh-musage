@@ -11,7 +11,13 @@
 [![v0.1.0](https://img.shields.io/badge/version-v0.1.0-blue.svg)](./CHANGELOG.md)
 [![5 providers](https://img.shields.io/badge/providers-5-orange.svg)](./docs/architecture.md)
 
-![demo](docs/assets/demo.gif)
+## Screenshots
+
+![MiniMax 5h/7d dual window](docs/assets/screenshots/screenshot-2-minimax.png)
+
+![DeepSeek balance](docs/assets/screenshots/screenshot-1-deepseek.png)
+
+![OpenRouter balance](docs/assets/screenshots/screenshot-3-openrouter.png)
 
 ## 这是什么
 
