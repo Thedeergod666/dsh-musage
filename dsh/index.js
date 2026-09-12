@@ -85,7 +85,8 @@ const PROVIDERS = {
     parse: parseOpenrouterResponse,
   },
   zhipu: {
-    refs: ["ZAI_CODING_CN_API_KEY", "ZHIPU_API_KEY"],
+    // ZAI_API_KEY: route id "zai" 的 <UPPER>_API_KEY 推导 (DSH 常见写法)
+    refs: ["ZAI_CODING_CN_API_KEY", "ZAI_API_KEY", "ZHIPU_API_KEY"],
     urls: {
       ZAI_CODING_CN_API_KEY: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
       ZHIPU_API_KEY:          "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
@@ -101,7 +102,7 @@ const PROVIDERS = {
     refs: [
       "DASHSCOPE_API_KEY", "DASHSCOPE_CODING_API_KEY", "DASHSCOPE_CODING_PLAN_API_KEY",
       "BAILIAN_API_KEY", "BAILIAN_CODING_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",
-      "QWEN_API_KEY", "QWEN_CODING_API_KEY",
+      "QWEN_API_KEY", "QWEN_CODING_API_KEY", "QWEN_TOKEN_PLAN_API_KEY",
       "CODING_PLAN_API_KEY", "ALIBABA_CODING_PLAN_API_KEY", "ALIBABA_CLOUD_API_KEY",
     ],
     urls: {

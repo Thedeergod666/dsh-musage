@@ -45,6 +45,8 @@ window.__ModuleLoader__.load({
       "kimi": "kimi",
       "openrouter": "openrouter",
       "zai-coding-cn": "zhipu",
+      "zai": "zhipu",
+      "zai-cn": "zhipu",
       "zhipu": "zhipu",
       // 阿里云百炼 / Model Studio Coding Plan (sk-sp- key, coding.dashscope
       // Base URL). route id 没有官方拼写, 常见的都收.
@@ -58,6 +60,8 @@ window.__ModuleLoader__.load({
       "qwen": "dashscope",
       "qwen-coding": "dashscope",
       "qwen-coding-plan": "dashscope",
+      "qwen-token-plan": "dashscope",
+      "token-plan": "dashscope",
       "coding-plan": "dashscope",
       "alibaba-coding": "dashscope",
       "aliyun-coding": "dashscope",
