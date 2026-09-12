@@ -22,19 +22,21 @@
 │ DSH host (Node.js)                                          │
 │  ┌───────────────────────────────────────────────────────┐  │
 │  │ musage-minimax-quota Plugin (host)                    │  │
-│  │  - 定时器 60s → 走 PROVIDERS[provider] 查表         │  │
+│  │  - 定时器 5min 预热 → 走 PROVIDERS[provider] 查表   │  │
 │  │  - 30s TTL 缓存, 错误指数退避 (5s base, 30min cap)  │  │
-│  │  - 5 个 provider 通用路径 (minimax / deepseek /     │  │
-│  │    kimi / openrouter / zhipu), 每个独立 schema 解析 │  │
+│  │  - 6 个 provider 通用路径 (minimax / deepseek /     │  │
+│  │    kimi / openrouter / zhipu / dashscope),          │  │
+│  │    每个独立 schema 解析                              │  │
 │  └───────────────────────────────────────────────────────┘  │
 │        │                                                   │
-│        │ subprocess.spawn({argv: ['curl', '-H', 'Bearer xxx', url]})│
+│        │ subprocess.spawn(curl -K -, 鉴权 header 走 stdin)         │
 │        ▼                                                   │
 │  DSH subprocess Service (subprocess-local)                │
 │        │ HTTPS                                             │
 │        ▼                                                   │
 │  api.minimaxi.com / api.deepseek.com / api.kimi.com /     │
-│  openrouter.ai / open.bigmodel.cn                          │
+│  openrouter.ai / open.bigmodel.cn /                       │
+│  bailian.console.aliyun.com (百炼 Coding Plan)            │
 └─────────────────────────────────────────────────────────────┘
 
 Client 端:
@@ -61,15 +63,16 @@ Client 端:
 - 用户在 DSH 模型设置里配的 key 直接被用, plugin 完全不碰密钥存储
 
 ### 2. 多 provider 通用 host
-- `PROVIDERS` 注册表: 每个 entry 含 `refs / urls / parse / authStyle?`
+- `PROVIDERS` 注册表: 每个 entry 含 `refs / urls / parse / authHeaders? / method? / body? / fallbackUrl?`
 - `fetchProviderQuota(provider)` 查表, 走同一段 curl + 解析流程
-- 5 个 parser 各自独立 (从 Musage 各 rs 文件抄 schema):
+- 6 个 parser 各自独立 (从 Musage 各 rs 文件抄 schema):
   - `parseMinimaxResponse`: 2026-06-01 双 schema (percent-based / count-based)
   - `parseDeepseekBalance`: `balance_infos[].total_balance` (v0.0.20 修对, 不是老 ccswitch `balance[]`)
   - `parseKimiResponse`: `limits[].detail.{limit,remaining,resetTime}` + `usage.{...}`
   - `parseOpenrouterResponse`: `total_credits - total_usage` = 余额
   - `parseZhipuResponse`: `unit=3` (5h) + `unit=6` (周) 双窗口, **智谱特殊 `Authorization: <key>` 不加 Bearer**
-- 智谱 `authStyle: "raw"` 单独走 raw header 分支
+- 智谱 `authHeaders` 不加 Bearer 前缀; 百炼 dashscope 是唯一 POST + `{}` body 端点, 且国内/国际双宿主 (ConsoleNeedLogin 回退)
+- 鉴权 header 一律经 stdin curl 配置 (`curl -K -`) 下发, 不进 argv —— argv 里的 key 会被本机任意用户 `ps` 看到
 
 ### 3. 跟 DSH 模型自动切换
 - client 端 `inject: ['timer', 'modelDirectories']`
@@ -121,4 +124,5 @@ Client 端:
 | v0.0.19 | 修 `PROVIDER_ALIASES` 漏 `deepseek-official` (DSH 实际 provider id 带后缀) |
 | v0.0.20 | 修 DeepSeek 解析走 Musage 真实 schema (`balance_infos[].total_balance`, 不是老 ccswitch `balance[]`) |
 | v0.0.21 | 扩 5 个 provider (kimi / openrouter / zhipu) |
+| v0.1.2 | 扩 6 个 provider (dashscope 百炼 Coding Plan); 鉴权 header 移入 stdin |
 | v0.1.0 | **转 bundle 形态**: `dsh plugin add` 可装, client→host 从 `host.call` 改同源 fetch `/musage/quota` 路由, host 服务访问从 `ctx.get()` 改 inject 属性访问 |

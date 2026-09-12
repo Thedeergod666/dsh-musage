@@ -42,8 +42,30 @@ window.__ModuleLoader__.load({
       "deepseek": "deepseek",
       "deepseek-official": "deepseek",  // DSH dsh-llm-deepseek 实际 provider id (带后缀)
       "kimi-coding": "kimi",
+      "kimi": "kimi",
       "openrouter": "openrouter",
       "zai-coding-cn": "zhipu",
+      "zai": "zhipu",
+      "zai-cn": "zhipu",
+      "zhipu": "zhipu",
+      // 阿里云百炼 / Model Studio Coding Plan (sk-sp- key, coding.dashscope
+      // Base URL). route id 没有官方拼写, 常见的都收.
+      "dashscope": "dashscope",
+      "dashscope-cn": "dashscope",
+      "dashscope-coding": "dashscope",
+      "dashscope-coding-plan": "dashscope",
+      "bailian": "dashscope",
+      "bailian-coding": "dashscope",
+      "bailian-coding-plan": "dashscope",
+      "qwen": "dashscope",
+      "qwen-coding": "dashscope",
+      "qwen-coding-plan": "dashscope",
+      "qwen-token-plan": "dashscope",
+      "token-plan": "dashscope",
+      "coding-plan": "dashscope",
+      "alibaba-coding": "dashscope",
+      "aliyun-coding": "dashscope",
+      "modelstudio": "dashscope",
     };
 
     function readActiveProvider(snapshot) {
@@ -73,7 +95,6 @@ window.__ModuleLoader__.load({
         ok: false, loaded: false, kind: "other", message: "加载中", display: null,
       });
       const [provider, setProvider] = React.useState(null);
-      const [retrySeq, setRetrySeq] = React.useState(0);
 
       // 订阅 model directory 变化, 提取 active provider
       // v0.0.18: service 名是 "modelDirectories" (DSH ModelDirectoryResolver super(ctx, "modelDirectories")),
@@ -139,7 +160,7 @@ window.__ModuleLoader__.load({
           alive = false;
           try { dispose(); } catch (e) {}
         };
-      }, [provider, timer, retrySeq]);
+      }, [provider, timer]);
 
       // 容器: display: inline-flex + margin-left: auto → 推 .trailing flex 容器右 → 贴 model select.
       const containerStyle = {
@@ -208,6 +229,7 @@ window.__ModuleLoader__.load({
       if (p === "kimi") return "Kimi";
       if (p === "openrouter") return "OpenRouter";
       if (p === "zhipu") return "Zhipu";
+      if (p === "dashscope") return "Bailian";
       return p;
     }
 
@@ -256,6 +278,18 @@ window.__ModuleLoader__.load({
           React.createElement("span", { key: "5", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "5h " + fiveHrPct),
           React.createElement("span", { key: "sep1", style: { opacity: 0.5, fontSize: 10 } }, "|"),
           React.createElement("span", { key: "7", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "7d " + weeklyPct),
+        ];
+      }
+      if (provider === "dashscope") {
+        // 百炼 Coding Plan 三窗口: 5h 滚动 / 周 / 月 (按模型调用次数计)
+        const pct = (v) => (typeof v === "number") ? v + "%" : "—";
+        return [
+          React.createElement("span", { key: "p", style: { fontWeight: 500 } }, "Bailian"),
+          React.createElement("span", { key: "5", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "5h " + pct(d.fiveHrPct)),
+          React.createElement("span", { key: "sep1", style: { opacity: 0.5, fontSize: 10 } }, "|"),
+          React.createElement("span", { key: "w", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "Wk " + pct(d.weeklyPct)),
+          React.createElement("span", { key: "sep2", style: { opacity: 0.5, fontSize: 10 } }, "|"),
+          React.createElement("span", { key: "m", style: { fontWeight: 600, color: "var(--dsh-text, #eee)" } }, "Mo " + pct(d.monthlyPct)),
         ];
       }
       return [React.createElement("span", { key: "p" }, provider)];
