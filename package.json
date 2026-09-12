@@ -1,7 +1,7 @@
 {
   "name": "dsh-musage",
   "version": "0.1.1",
-  "description": "Coding-plan quota and balance readout for the DSH composer toolbar: MiniMax, DeepSeek, Kimi, OpenRouter and Zhipu windows follow the selected model; API keys are reused from DSH model settings.",
+  "description": "Coding-plan quota and balance readout for the DSH composer toolbar: MiniMax, DeepSeek, Kimi, OpenRouter, Zhipu and Alibaba Bailian Coding Plan windows follow the selected model; API keys are reused from DSH model settings.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -28,7 +28,8 @@
     "README.md",
     "LICENSE",
     "CHANGELOG.md",
-    "docs"
+    "docs",
+    "test"
   ],
   "exports": {
     ".": "./dsh/index.js",
@@ -43,5 +44,8 @@
       "platform": "web",
       "immediately": true
     }
+  },
+  "scripts": {
+    "test": "node test/musage-smoke.mjs"
   }
 }
