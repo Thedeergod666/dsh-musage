@@ -81,14 +81,19 @@ window.__ModuleLoader__.load({
       //          不 fallback: 没 model 上下文时 null → 显示 "musage".
       const modelsSvc = models;
       React.useEffect(() => {
-        if (!modelsSvc || !props || !props.sessionId) {
-          console.log("[musage-client] skip: no models or no sessionId. models=" + !!modelsSvc + " sessionId=" + (props && props.sessionId) + " → no fallback (没订阅到 provider)");
+        // v0.1.2+: DSH 0.1.x RC slot 系统把 session 作为 owner prop 传下来
+        // ({ session: ConversationSnapshot, input: InputState }), 不是 props.sessionId.
+        // 老架构直接传 sessionId, 新架构要 props.session.sessionId. 两个都试.
+        const sessionId = (props && props.session && props.session.sessionId)
+          || (props && props.sessionId);
+        if (!modelsSvc || !sessionId) {
+          console.log("[musage-client] skip: no models or no sessionId. models=" + !!modelsSvc + " sessionId=" + sessionId + " → no fallback (没订阅到 provider)");
           setProvider(null);
           return;
         }
         let directory;
         try {
-          directory = modelsSvc.directoryFor(props.sessionId);
+          directory = modelsSvc.directoryFor(sessionId);
           console.log("[musage-client] directoryFor ok: " + (directory ? "have directory" : "null"));
         } catch (e) {
           console.error("[musage-client] directoryFor 抛异常: " + ((e && e.stack) || e) + " → no fallback");
@@ -114,7 +119,7 @@ window.__ModuleLoader__.load({
         updateProvider();
         const stop = directory.store.subscribe(updateProvider);
         return () => { stop(); };
-      }, [modelsSvc, props && props.sessionId]);
+      }, [modelsSvc, props && (props.session ? props.session.sessionId : props.sessionId)]);
 
       // 每次 provider 切换或 timer 变化, 重 fetch
       React.useEffect(() => {

@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.2 — 2026-09-04
+
+### Fixed
+- **client 端 `props.sessionId` 在 DSH 0.1.x RC slot 系统下永远是 undefined**: 新架构的 `conversation.input.*` slot 把 `{ session: ConversationSnapshot, input: InputState }` 作为 owner prop 传下来, 不再传 `props.sessionId`. v0.1.1 的代码用 `props.sessionId` 直接拿, 拿到 undefined → `setProvider(null)` → fallback 文本 "musage" 在 error boundary 下被吞掉, composer 完全不显示 readout.
+  - 修复: `dsh/client.js` `InlineReadout` 兼容两种架构, 优先用 `props.session.sessionId`, 回落到 `props.sessionId`
+  - 影响版本: v0.1.1 (任何装在 DSH 0.1.1-rc.x / 0.1.2-rc.x 上的 bundle 都触发; 旧 DSH 不受影响, 走 `props.sessionId` 分支)
+  - 验证: 装在 DSH 0.1.1-rc.2 (本地 `.dsh/profiles/web`) 后, refresh 页面, MiniMax-M3 模型下应出现 `MiniMax 5h X% | 7d Y%`
+  - 顺带说明: `conversation.input.right` slot 在新架构里位置变成 model select **右边** (send 按钮之前), 不是老架构的"model select 左边". 老架构下的截图 (`docs/assets/screenshots/screenshot-2-minimax.png`) 是 v0.0.x 时代的, 位置会跟新架构不同, 但功能完整.
+
 ## v0.1.1 — 2026-08-18
 
 ### Fixed

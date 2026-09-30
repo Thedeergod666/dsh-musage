@@ -68,18 +68,49 @@
 
 ## 安装 / 部署
 
-一条命令安装 (v0.1.0 起为可安装 bundle, 与 dsh-market 装的插件同一机制):
+v0.1.0 起为可安装 bundle, 与 dsh-market 装的插件同一机制. **Web 和桌面端都能装, 但入口不同.**
+
+### DSH 桌面端 (DeepSeek Harness.app)
+
+桌面端是 DSH 官方产品, 内置了图形插件管理页:
+
+1. 侧边栏点 **插件** (在「新会话」下面、「工作区」上面那个风车图标)
+2. 点 **+ 添加插件**, 粘贴下面这行, 回车
+3. **安装** → **立即启用**
+
+```
+github:Thedeergod666/dsh-musage
+```
+
+装完**不用重启** — 桌面端 profile 默认开着 HMR, patch 改动会自动重载. 刷一下页面, 回到会话看 composer 工具栏.
+
+> ⚠️ 不要去 设置 → **内置插件**. 那个分区是只读清单, 列的是"本部署随附"的官方插件, 装不了也搜不到社区插件 — 装插件只有侧边栏那个页面.
+>
+> ⚠️ 桌面端 profile 被应用独占, `dsh plugin --profile desktop add ...` 会被 CLI 拒绝
+> (`error: profile "desktop" is managed exclusively by the Electron application`).
+> 桌面端只能通过上面那个界面装; `--profile web` 仍然是 CLI 可管的普通 profile.
+
+### DSH Web (`dsh web`)
+
+一条命令安装:
 
 ```sh
 dsh plugin --profile web add github:Thedeergod666/dsh-musage
 ```
 
+装完重启 `dsh web`. 收录 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 注册表后, 也可在 设置 → Plugin Market 一键安装/更新.
+
+### 两种环境都要做的
+
 1. 在 DSH 模型设置里配置好你要监控的 provider (minimax-cn / deepseek / zhipu 等)
-2. 跑上面的安装命令, 重启 `dsh web`
-3. 收录 [awesome-dsh-plugin](https://github.com/awesome-dsh-plugin/awesome-dsh-plugin) 注册表后, 也可在 设置 → Plugin Market 一键安装/更新
-4. 切到对应 model, DSH composer 工具栏里出现 `[Provider 5h X% | 7d Y%]` 或 `[Provider $X.XX]`
+2. 切到对应 model, composer 工具栏里出现 `[Provider 5h X% | 7d Y%]` 或 `[Provider $X.XX]`
 
 本地开发 / 升级 / 故障排查见 [`deploy.md`](./deploy.md).
+
+> **桌面端额外注意**: 桌面端首次初始化只带 `minimax-cn` 一个 provider.
+> 切到其它 provider 的模型前, 要先把 provider 声明写进 profile patch ——
+> 见 [`deploy.md` 的「桌面端模型 provider 迁移`](./deploy.md#桌面端模型-provider-迁移).
+> 光有 API Key 不会自动出现 provider 条目.
 
 ## 前置依赖
 
