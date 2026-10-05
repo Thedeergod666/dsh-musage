@@ -24,7 +24,7 @@
 //   - `subprocess` 调 curl: DSH 部署里没有 fetch provider, 且 WebFetchProvider
 //     协议只支持 GET + url, 不能加 headers.
 
-const POLL_INTERVAL_MS = 60_000;
+const POLL_INTERVAL_MS = 5 * 60_000;
 const CACHE_TTL_MS = 30_000;
 const BACKOFF_BASE_MS = 5_000;
 const BACKOFF_MAX_MS = 30 * 60 * 1000;
@@ -40,9 +40,17 @@ export const inject = ["credentials", "subprocess", "timer"];
 //   - refs: 候选 credentials ref 列表, 按优先级尝试
 //   - urls: { ref: endpoint } 端点
 //   - parse: (body) => { ok, ...data | kind, message }
+//   - authHeaders: (key) => string[] Authorization header 列表 (默认 Bearer)
+//   - method / body / fallbackUrl: 可选, 非 GET 端点或双宿主端点用
 //
 // minimax: percent-based / count-based 双 schema (来自 ccswitch 逆向)
 // deepseek: user/balance 端点, 返回 CNY/USD 余额 (来自 Musage deepseek.rs)
+// dashscope: 阿里云百炼 Coding Plan (Model Studio) 三窗口套餐用量
+//   (5h 滚动 / 周 / 月), POST 控制台 API, 国内/国际双宿主回退
+
+const BAILIAN_QUOTA_PATH = "/data/api.json?action=zeldaEasy.broadscope-bailian.codingPlan.queryCodingPlanInstanceInfoV2&product=broadscope-bailian&api=queryCodingPlanInstanceInfoV2";
+const BAILIAN_QUOTA_URL_CN = "https://bailian.console.aliyun.com" + BAILIAN_QUOTA_PATH;
+const BAILIAN_QUOTA_URL_INTL = "https://modelstudio.console.alibabacloud.com" + BAILIAN_QUOTA_PATH;
 
 const PROVIDERS = {
   minimax: {
@@ -77,14 +85,40 @@ const PROVIDERS = {
     parse: parseOpenrouterResponse,
   },
   zhipu: {
-    refs: ["ZAI_CODING_CN_API_KEY", "ZHIPU_API_KEY"],
+    // ZAI_API_KEY: route id "zai" 的 <UPPER>_API_KEY 推导 (DSH 常见写法)
+    refs: ["ZAI_CODING_CN_API_KEY", "ZAI_API_KEY", "ZHIPU_API_KEY"],
     urls: {
       ZAI_CODING_CN_API_KEY: "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
       ZHIPU_API_KEY:          "https://open.bigmodel.cn/api/monitor/usage/quota/limit",
     },
     parse: parseZhipuResponse,
     // 智谱特殊: Authorization header 不加 "Bearer " 前缀 (来自 Musage zhipu.rs 注释)
-    authStyle: "raw",
+    authHeaders: (key) => ["Authorization: " + key],
+  },
+  dashscope: {
+    // DSH 里配百炼 Coding Plan 的 route id 五花八门 (dashscope / bailian /
+    // qwen / coding-plan / ...), 全部按 <UPPER_ROUTE>_API_KEY 规范列进来.
+    // 注意 Coding Plan key 是 sk-sp- 开头的专用 key, 与按量计费 sk- key 不通用.
+    refs: [
+      "DASHSCOPE_API_KEY", "DASHSCOPE_CODING_API_KEY", "DASHSCOPE_CODING_PLAN_API_KEY",
+      "BAILIAN_API_KEY", "BAILIAN_CODING_API_KEY", "BAILIAN_CODING_PLAN_API_KEY",
+      "QWEN_API_KEY", "QWEN_CODING_API_KEY", "QWEN_TOKEN_PLAN_API_KEY",
+      "CODING_PLAN_API_KEY", "ALIBABA_CODING_PLAN_API_KEY", "ALIBABA_CLOUD_API_KEY",
+    ],
+    urls: {
+      // 所有 ref 同一个端点 (urls[ref] 缺省时回退 urls[refs[0]]);
+      // 国内宿主优先, ConsoleNeedLogin 时回退国际宿主
+      DASHSCOPE_API_KEY: BAILIAN_QUOTA_URL_CN,
+    },
+    fallbackUrl: BAILIAN_QUOTA_URL_INTL,
+    method: "POST",
+    body: "{}",
+    authHeaders: (key) => [
+      "Authorization: Bearer " + key,
+      "x-api-key: " + key,
+      "X-DashScope-API-Key: " + key,
+    ],
+    parse: parseDashscopeCodingPlan,
   },
 };
 
@@ -106,7 +140,7 @@ function parseEndTime(v) {
 
 // ----- minimax schema parser (2026-06-01 双 schema 兼容) -----
 
-function parseMinimaxResponse(body) {
+export function parseMinimaxResponse(body) {
   let json;
   try {
     json = typeof body === "string" ? JSON.parse(body) : body;
@@ -177,7 +211,7 @@ function parseMinimaxWindow(entry, prefix, legacyRemaining, legacyTotal, endTime
 //     "balance_infos": [ { "currency": "CNY", "total_balance": "43.97",
 //                            "granted_balance": "0.00", "topped_up_balance": "43.97" } ] }
 
-function parseDeepseekBalance(body) {
+export function parseDeepseekBalance(body) {
   let json;
   try {
     json = typeof body === "string" ? JSON.parse(body) : body;
@@ -367,8 +401,89 @@ function parseZhipuResponse(body) {
 function formatBalance(n, currency) {
   // 简洁显示: 数字 + currency 符号. 大数取整, 小数 2 位.
   const symbol = currency === "CNY" ? "¥" : currency === "USD" ? "$" : "";
-  const text = (n >= 100) ? n.toFixed(0) : (n >= 10 ? n.toFixed(2) : n.toFixed(2));
-  return symbol + text;
+  return symbol + (n >= 100 ? n.toFixed(0) : n.toFixed(2));
+}
+
+// ----- dashscope (阿里云百炼 / Model Studio Coding Plan) parser -----
+// 端点: POST bailian.console.aliyun.com (国内) / modelstudio.console.alibabacloud.com
+//       (国际) /data/api.json?action=...queryCodingPlanInstanceInfoV2
+// 鉴权: Coding Plan 专用 key (sk-sp- 开头), Bearer + x-api-key +
+//       X-DashScope-API-Key 三 header 同发 (控制台 API 对 header 的接受
+//       方式随宿主而异, 同发已被第三方实现验证可行)
+// schema:
+//   { "code": "Success" | "200" | "ConsoleNeedLogin" | ...,
+//     "data": { "codingPlanInstanceInfos": [ {
+//       "codingPlanQuotaInfo": {
+//         "per5HourUsedQuota": 123, "per5HourTotalQuota": 6000,
+//         "per5HourQuotaNextRefreshTime": 1780000000,   // unix 秒
+//         "perWeekUsedQuota": ..., "perWeekTotalQuota": ..., "perWeekQuotaNextRefreshTime": ...,
+//         "perBillMonthUsedQuota": ..., "perBillMonthTotalQuota": ..., "perBillMonthQuotaNextRefreshTime": ... } } ] } }
+// 套餐额度按"模型调用次数"计 (Pro: 5h 6000 / 周 45000 / 月 90000).
+
+export function parseDashscopeWindow(q, usedKey, totalKey, resetKey) {
+  const used = Number(q[usedKey]);
+  const total = Number(q[totalKey]);
+  const resetRaw = Number(q[resetKey]);
+  if (!isFinite(used) || !isFinite(total) || total <= 0) return null;
+  const resetsAt = (isFinite(resetRaw) && resetRaw > 1e9) ? resetRaw * 1000 : null;
+  return {
+    used, total,
+    usedPercent: Math.max(0, Math.min(100, Math.round((used / total) * 100))),
+    resetsAt,
+  };
+}
+
+export function parseDashscopeCodingPlan(body) {
+  let json;
+  try {
+    json = typeof body === "string" ? JSON.parse(body) : body;
+  } catch {
+    return { ok: false, kind: "parse", message: "JSON 解析失败" };
+  }
+  if (!json || typeof json !== "object") {
+    return { ok: false, kind: "parse", message: "百炼响应不是对象" };
+  }
+  if (json.code === "ConsoleNeedLogin") {
+    // 专用信号: fetch 层会用另一宿主重试一次
+    return { ok: false, kind: "console_need_login", message: "该宿主要求登录态" };
+  }
+  if (json.code !== "Success" && json.code !== "200") {
+    return {
+      ok: false,
+      kind: (json.code === "InvalidApiKey" || json.code === "Unauthorized") ? "auth_failed" : "server_error",
+      message: "百炼返错: " + (json.code || "?") + " · " + (json.message || json.msg || ""),
+    };
+  }
+  const infos = json.data && json.data.codingPlanInstanceInfos;
+  if (!Array.isArray(infos) || infos.length === 0) {
+    return { ok: false, kind: "parse", message: "codingPlanInstanceInfos 为空 (未订阅 Coding Plan?)" };
+  }
+  const quota = infos[0] && infos[0].codingPlanQuotaInfo;
+  if (!quota || typeof quota !== "object") {
+    return { ok: false, kind: "parse", message: "codingPlanQuotaInfo 缺失" };
+  }
+  const fiveHour = parseDashscopeWindow(quota,
+    "per5HourUsedQuota", "per5HourTotalQuota", "per5HourQuotaNextRefreshTime");
+  const weekly = parseDashscopeWindow(quota,
+    "perWeekUsedQuota", "perWeekTotalQuota", "perWeekQuotaNextRefreshTime");
+  const monthly = parseDashscopeWindow(quota,
+    "perBillMonthUsedQuota", "perBillMonthTotalQuota", "perBillMonthQuotaNextRefreshTime");
+  if (!fiveHour && !weekly && !monthly) {
+    return { ok: false, kind: "schema_unknown", message: "百炼响应里没有可识别的 5h/周/月窗口" };
+  }
+  return {
+    ok: true,
+    provider: "dashscope",
+    fiveHour, weekly, monthly,
+    display: {
+      fiveHrPct: fiveHour ? fiveHour.usedPercent : null,
+      weeklyPct: weekly ? weekly.usedPercent : null,
+      monthlyPct: monthly ? monthly.usedPercent : null,
+      fiveHrResetsIn: fiveHour ? formatResetsIn(fiveHour.resetsAt) : null,
+      weeklyResetsIn: weekly ? formatResetsIn(weekly.resetsAt) : null,
+      monthlyResetsIn: monthly ? formatResetsIn(monthly.resetsAt) : null,
+    },
+  };
 }
 
 function formatResetsIn(resetsAtMs) {
@@ -386,10 +501,10 @@ function classifyHttpStatus(status) {
   if (status === 429) return "rate_limited";
   if (status === 401 || status === 403) return "auth_failed";
   if (status >= 500) return "server_error";
-  return "server_error";
+  return "client_error";
 }
 
-function parseCurlOutput(rawText) {
+export function parseCurlOutput(rawText) {
   if (typeof rawText !== "string") return { body: "", statusCode: 0 };
   const lastNl = rawText.lastIndexOf("\n");
   if (lastNl < 0) return { body: rawText, statusCode: 0 };
@@ -400,15 +515,21 @@ function parseCurlOutput(rawText) {
   return { body, statusCode };
 }
 
-// ----- 路由信任检查 (同源 loopback 才放行, 形态抄自 modlens) -----
+// ----- 路由信任检查 (同源 + 直连 host 才放行, 形态抄自 modlens) -----
 
-function isLoopbackHost(hostname) {
-  if (hostname === "localhost" || hostname === "::1" || hostname === "[::1]") return true;
-  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(hostname);
-  return !!m && Number(m[1]) === 127;
+// localhost 或任意 IP 字面量 (含 LAN 地址). IP 字面量不可能被 DNS
+// rebinding 劫持, 域名 Host 才是 rebinding 攻击面 —— 因此 loopback 之外的
+// LAN 直连 (dsh web 绑 0.0.0.0 后从局域网另一台机器开 GUI) 也能用, 而
+// rebinder 的域名 Host 永远进不来.
+function isDirectHost(hostname) {
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
+  if (hostname === "::1" || hostname === "[::1]") return true;
+  // IPv6 字面量: 十六进制+冒号 且必须含冒号 (纯 hex 单词不是 IP)
+  if (/^[0-9a-f:]*:[0-9a-f:]*$/i.test(hostname)) return true;
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname);      // IPv4 字面量
 }
 
-function isTrustedRequest(req) {
+export function isTrustedRequest(req) {
   const host = req.headers && req.headers.host;
   if (typeof host !== "string" || host === "") return false;
   let hostUrl;
@@ -417,7 +538,7 @@ function isTrustedRequest(req) {
   } catch {
     return false;
   }
-  if (!isLoopbackHost(hostUrl.hostname)) return false;
+  if (!isDirectHost(hostUrl.hostname)) return false;
   if (req.headers["sec-fetch-site"] === "cross-site") return false;
   const origin = req.headers.origin;
   if (origin === undefined) return true;
@@ -472,14 +593,32 @@ export function apply(ctx) {
     return curlPath;
   }
 
-  async function curlFetch(url, key, authStyle) {
+  // curl 配置文件值转义: 反斜杠 + 双引号 (curl -K 语法)
+  function curlConfigQuote(value) {
+    return String(value).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  }
+
+  async function curlFetch(url, authHeaders, opts) {
     const subprocess = ctx.subprocess;
     if (!subprocess) throw new Error("subprocess service 不可用");
     const c = await resolveCurl();
-    // zhipu 特殊: Authorization 不加 "Bearer " 前缀 (来自 Musage zhipu.rs 注释)
-    const authHeader = (authStyle === "raw")
-      ? "Authorization: " + key
-      : "Authorization: Bearer " + key;
+    const options = opts || {};
+    // 鉴权 header 全部走 stdin 配置文件 (`curl -K -`), 不进 argv ——
+    // argv 里的 -H "Authorization: ..." 会把 API Key 暴露给本机任意用户
+    // 的 `ps` 输出; stdin 配置只被子进程自己读到.
+    const configLines = ["header = \"Accept: application/json\""];
+    for (const header of authHeaders) {
+      configLines.push("header = \"" + curlConfigQuote(header) + "\"");
+    }
+    if (options.method && options.method !== "GET") {
+      configLines.push("request = \"" + options.method + "\"");
+    }
+    if (options.body !== undefined) {
+      // curl data 默认 content-type 是 form-urlencoded; JSON API 需要显式声明
+      configLines.push("header = \"Content-Type: application/json\"");
+      configLines.push("data = \"" + curlConfigQuote(options.body) + "\"");
+    }
+    const configText = configLines.join("\n") + "\n";
     let handle;
     try {
       handle = subprocess.spawn({
@@ -487,13 +626,12 @@ export function apply(ctx) {
           c, "-sS",
           "--max-time", String(Math.floor(REQUEST_TIMEOUT_MS / 1000)),
           "-w", "\n%{http_code}",
-          "-H", authHeader,
-          "-H", "Accept: application/json",
+          "-K", "-",
           url,
         ],
         cwd: "/",
         stdio: {
-          stdin: "ignore",
+          stdin: { data: configText },
           stdout: { maxBytes: 8 * 1024 * 1024 },
           stderr: { maxBytes: 64 * 1024 },
         },
@@ -556,17 +694,30 @@ export function apply(ctx) {
       };
     }
     const url = cfg.urls[ref] || cfg.urls[cfg.refs[0]];
+    const headers = cfg.authHeaders ? cfg.authHeaders(key) : ["Authorization: Bearer " + key];
+    const spawnOpts = { method: cfg.method, body: cfg.body };
+    let usedUrl = url;
     let raw;
     try {
-      raw = await curlFetch(url, key, cfg.authStyle);
+      raw = await curlFetch(url, headers, spawnOpts);
       if (!raw.ok) return raw;
     } catch (e) {
       return { ok: false, kind: "network", message: "fetch 异常: " + ((e && e.message) || String(e)) };
     }
-    const parsed = cfg.parse(raw.body);
+    let parsed = cfg.parse(raw.body);
+    // 双宿主端点 (百炼国内/国际控制台): ConsoleNeedLogin 时换另一宿主重试一次
+    if (!parsed.ok && parsed.kind === "console_need_login" && cfg.fallbackUrl && cfg.fallbackUrl !== url) {
+      try {
+        raw = await curlFetch(cfg.fallbackUrl, headers, spawnOpts);
+        if (raw.ok) {
+          parsed = cfg.parse(raw.body);
+          usedUrl = cfg.fallbackUrl;
+        }
+      } catch (e) {}
+    }
     console.log("[musage] [" + provider + "] parsed.ok=" + parsed.ok + " display=" + (parsed.ok ? JSON.stringify(parsed.display) : "") + " err=" + (parsed.ok ? "" : parsed.message));
     if (parsed.ok) {
-      parsed.url = url;
+      parsed.url = usedUrl;
       parsed.ref = ref;
     }
     return parsed;
@@ -615,12 +766,13 @@ export function apply(ctx) {
           path: "/musage/quota",
           handler: async (req, res) => {
             const send = (status, body) => {
-              res.writeHead(status, { "content-type": "application/json" });
+              // no-store: 防浏览器启发式缓存 GET 响应导致 widget 展示旧数据
+              res.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
               res.end(JSON.stringify(body));
             };
             try {
               if (!isTrustedRequest(req)) {
-                send(403, { ok: false, kind: "forbidden", message: "request refused: same-origin loopback only" });
+                send(403, { ok: false, kind: "forbidden", message: "request refused: same-origin direct-host only" });
                 return;
               }
               if (req.method !== "GET") {

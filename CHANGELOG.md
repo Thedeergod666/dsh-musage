@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.1.3 — 2026-10-05
+
+### Added
+- **dashscope provider (阿里云百炼 / Model Studio Coding Plan)**: 三窗口套餐用量
+  (5h 滚动 / 周 / 月, 按模型调用次数计), 控制台 API `queryCodingPlanInstanceInfoV2`,
+  国内 (`bailian.console.aliyun.com`) / 国际 (`modelstudio.console.alibabacloud.com`)
+  双宿主, `ConsoleNeedLogin` 时自动回退. 唯一 POST 端点 (`{}` body), Bearer +
+  `x-api-key` + `X-DashScope-API-Key` 三 header 同发.
+  - 新 ref 候选: `DASHSCOPE_API_KEY` / `BAILIAN_*_API_KEY` / `QWEN_*_API_KEY` /
+    `CODING_PLAN_API_KEY` 等 (DSH route id → `<UPPER>_API_KEY` 规范)
+  - client alias: `dashscope` / `bailian` / `qwen` / `coding-plan` / `alibaba-coding` 等
+  - widget 显示 `Bailian 5h X% | Wk Y% | Mo Z%`
+- 补齐 README 已写但 client 漏掉的 alias: `kimi` / `zhipu`
+- `npm test` 烟测 (`test/musage-smoke.mjs`): dashscope parser / 路由信任检查 /
+  curl 输出拆分 / 既有 parser 回归
+
+### Security
+- **鉴权 header 移出 argv**: curl 的 `-H "Authorization: ..."` 原来拼在 argv 里,
+  API Key 会暴露给本机任意用户的 `ps` 输出; 现在全部经 stdin curl 配置
+  (`curl -K -`) 下发, argv 里不再出现任何密钥
+- **路由信任检查放宽到 IP 字面量**: 原来只放行 loopback Host, `dsh web` 绑
+  0.0.0.0 后从局域网另一台机器开 GUI 时 widget 403; 现在 localhost + 任意 IP
+  字面量直连 Host 都放行 (IP 字面量不可能被 DNS rebinding 劫持, 域名 Host
+  仍拒绝)
+- 路由响应补 `cache-control: no-store`, 防浏览器启发式缓存导致 widget 旧数据
+
+### Changed
+- 后台预热轮询 60s → 5min (widget 挂载时 client 仍每 60s 刷新, 减少
+  provider API 无谓请求)
+- 4xx 非鉴权错误归类 `client_error` (原误标 `server_error`)
+
 ## v0.1.2 — 2026-09-04
 
 ### Fixed

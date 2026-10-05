@@ -1,6 +1,6 @@
 # dsh-musage
 
-> DSH (DeepSeek Harness) 版的 [Musage](https://github.com/Thedeergod666/Musage) — 在 DSH composer 工具栏里实时显示 5 家 AI 套餐 provider 的用量余额, 跟着当前模型自动切换.
+> DSH (DeepSeek Harness) 版的 [Musage](https://github.com/Thedeergod666/Musage) — 在 DSH composer 工具栏里实时显示 6 家 AI 套餐 provider 的用量余额, 跟着当前模型自动切换.
 
 [![dsh-plugin](https://img.shields.io/badge/topic-dsh--plugin-blueviolet)](https://github.com/topics/dsh-plugin)
 [![cordis-plugin](https://img.shields.io/badge/cordis--plugin-dynamic-blue)](https://github.com/topics/cordis-plugin)
@@ -8,8 +8,8 @@
 [![ai-usage](https://img.shields.io/badge/ai--usage-quota-brightgreen)](https://github.com/topics/ai-usage)
 [![coding-plan](https://img.shields.io/badge/coding--plan-monitor-yellow)](https://github.com/topics/coding-plan)
 [![MIT](https://img.shields.io/badge/license-MIT-green.svg)](./LICENSE)
-[![v0.1.0](https://img.shields.io/badge/version-v0.1.0-blue.svg)](./CHANGELOG.md)
-[![5 providers](https://img.shields.io/badge/providers-5-orange.svg)](./docs/architecture.md)
+[![v0.1.3](https://img.shields.io/badge/version-v0.1.3-blue.svg)](./CHANGELOG.md)
+[![6 providers](https://img.shields.io/badge/providers-6-orange.svg)](./docs/architecture.md)
 
 ## Screenshots
 
@@ -25,10 +25,10 @@
 
 **dsh-musage** 把 Musage 的核心能力**搬进 DSH 浏览器页面里**:
 
-- ✅ **5 个 provider** 当前实装: MiniMax · DeepSeek · Kimi · OpenRouter · 智谱 GLM (zai-coding-cn)
+- ✅ **6 个 provider** 当前实装: MiniMax · DeepSeek · Kimi · OpenRouter · 智谱 GLM (zai-coding-cn) · 阿里云百炼 Coding Plan (dashscope)
 - ✅ **跟着模型自动切换** — 切到 minimax-cn 显示套餐用量, 切到 deepseek 显示余额, 切到 zai-coding-cn 显示智谱套餐, … 全自动
 - ✅ **复用 DSH 已配 API Key** — 在 DSH 模型设置里配过 minimax / deepseek / openrouter / zhipu 的话, plugin 立刻拿到, 不需重复填
-- ✅ **5h + 周 双窗口套餐** (minimax / kimi / zhipu) 或 **余额** (deepseek / openrouter) 自动选合适显示
+- ✅ **5h + 周 双窗口套餐** (minimax / kimi / zhipu), **5h/周/月 三窗口** (百炼 Coding Plan) 或 **余额** (deepseek / openrouter) 自动选合适显示
 - ✅ **零侵入** — 注册到 `conversation.input.right` slot (紧邻 model select 左侧), 不挡对话/输入
 - ✅ **失败静默** — 拉数据失败只显示 `Provider ⚠`, hover 看具体错误, 不刷屏
 
@@ -47,22 +47,27 @@
 | `kimi` / `kimi-coding` | `Kimi 5h X% \| 7d Y%` | `api.kimi.com/coding/v1/usages` | Musage kimi.rs |
 | `openrouter` | `OpenRouter $X.XX` | `openrouter.ai/api/v1/credits` | Musage openrouter.rs |
 | `zhipu` / `zai-coding-cn` | `Zhipu 5h X% \| 7d Y%` | `open.bigmodel.cn/api/monitor/usage/quota/limit` | Musage zhipu.rs |
+| `dashscope` / `bailian` / `qwen` / `coding-plan` / ... | `Bailian 5h X% \| Wk Y% \| Mo Z%` (三窗口) | `bailian.console.aliyun.com` (国内) → `modelstudio.console.alibabacloud.com` (国际回退) · `queryCodingPlanInstanceInfoV2` | 控制台 API (第三方实现验证) |
 
 **显示**根据 `state.currency` 字段自动选 `¥` / `$` 符号, 同一份 plugin 国内/海外账号都直接显示对.
+
+### 百炼 Coding Plan 的 key 说明
+
+阿里云百炼 Coding Plan 用的是**专用 API Key (`sk-sp-` 开头) 和专用 Base URL (`coding.dashscope.aliyuncs.com`)**, 与按量计费的 `sk-` key / `dashscope.aliyuncs.com` **不互通**. 在 DSH 模型设置里添加 provider 时 (route id 任意, `dashscope` / `bailian` / `qwen` / `coding-plan` 都能识别), 请填 Coding Plan 专用 key —— 用量查询走百炼控制台 API, 国内宿主不可用时自动回退国际宿主. 套餐额度按模型调用次数计 (Pro: 5h 6000 / 周 45000 / 月 90000).
 
 ## 跟 [Musage](https://github.com/Thedeergod666/Musage) 桌面端的关系
 
 | 维度 | [Musage](https://github.com/Thedeergod666/Musage) (桌面) | dsh-musage (本插件) |
 |---|---|---|
 | **形态** | 悬浮窗 + 系统托盘 + 系统启动 | DSH 页面内一行 |
-| **覆盖 provider** | 14 个内置 (minimax / deepseek / xiaomi / tavily / zenmux / openrouter / kimi / zhipu / stepfun / siliconflow / claude_official / anysearch / volcengine_ark / tokendance) + 自定义 New API 中转站 | 5 个 (PoC 已覆盖 A 档最常见的 5 家) |
+| **覆盖 provider** | 14 个内置 (minimax / deepseek / xiaomi / tavily / zenmux / openrouter / kimi / zhipu / stepfun / siliconflow / claude_official / anysearch / volcengine_ark / tokendance) + 自定义 New API 中转站 | 6 个 (PoC 已覆盖 A 档最常见的 6 家) |
 | **鉴权** | API Key + Cookie + WebView 一键登录 | 复用 DSH 模型设置已配 API Key (Bearer, 大多数) |
 | **鉴权凭证来源** | 本地 `keys.json` (Unix 0600, 原子写) | DSH `credentials` Service (`.credentials.yaml`) |
 | **跨屏置顶 / 系统托盘** | ✅ 私有 API | ❌ DSH 自身无此 slot |
 | **WebView 一键登录** | ✅ (xiaomi / anysearch / stepfun / kimi 总套餐) | ❌ DSH 无 WebView 创建接口 |
 | **发布渠道** | GitHub Releases (dmg / nsis / AppImage / deb / rpm) | `dsh plugin add` / npm / dsh-market (bundle 形态) |
 
-**核心结论**: dsh-musage 是 Musage 在 DSH 内的**伴侣形态**, 不是替代品. 完整功能 (14 provider + 悬浮窗 + 托盘 + 一键登录) 仍然在 [Musage 桌面端](https://github.com/Thedeergod666/Musage). 本插件先做"DSH 内能用"路径, 5 个最常见 provider 已覆盖.
+**核心结论**: dsh-musage 是 Musage 在 DSH 内的**伴侣形态**, 不是替代品. 完整功能 (14 provider + 悬浮窗 + 托盘 + 一键登录) 仍然在 [Musage 桌面端](https://github.com/Thedeergod666/Musage). 本插件先做"DSH 内能用"路径, 6 个最常见 provider 已覆盖.
 
 **为什么有这个项目**: 我用 DSH 写代码, 想一边写一边看套餐还剩多少, 不可能再开一个 Musage 桌面 app 切来切去. 直接嵌在 DSH composer 旁边最自然. 这也是**给 Musage 桌面端带量** — 体验到 DSH 端轻量用法的用户, 可能愿意装完整桌面 app 拿 14 provider + 系统托盘 + 跨屏置顶.
 
