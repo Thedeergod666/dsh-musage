@@ -1,0 +1,16 @@
+{
+  "screenshots": [
+    {
+      "src": "docs/assets/screenshots/screenshot-2-minimax.png",
+      "alt": "MiniMax Coding Plan 5h/周双窗口用量：composer 工具栏显示 MiniMax 5h 20% | 7d 34%，紧邻 model select 随所选模型自动切换"
+    },
+    {
+      "src": "docs/assets/screenshots/screenshot-1-deepseek.png",
+      "alt": "DeepSeek 余额：切到 deepseek 模型后自动从套餐用量切换为余额显示（¥ 计价）"
+    },
+    {
+      "src": "docs/assets/screenshots/screenshot-3-openrouter.png",
+      "alt": "OpenRouter 余额：切到 openrouter 模型后自动显示 $ 计价余额"
+    }
+  ]
+}

@@ -27,9 +27,9 @@
 
 - ✅ **6 个 provider** 当前实装: MiniMax · DeepSeek · Kimi · OpenRouter · 智谱 GLM (zai-coding-cn) · 阿里云百炼 Coding Plan (dashscope)
 - ✅ **跟着模型自动切换** — 切到 minimax-cn 显示套餐用量, 切到 deepseek 显示余额, 切到 zai-coding-cn 显示智谱套餐, … 全自动
-- ✅ **复用 DSH 已配 API Key** — 在 DSH 模型设置里配过 minimax / deepseek / openrouter / zhipu 的话, plugin 立刻拿到, 不需重复填
+- ✅ **复用 DSH 已配 API Key** — 在 DSH 模型设置里配过 minimax / deepseek / openrouter / zhipu / dashscope 的话, plugin 立刻拿到, 不需重复填
 - ✅ **5h + 周 双窗口套餐** (minimax / kimi / zhipu), **5h/周/月 三窗口** (百炼 Coding Plan) 或 **余额** (deepseek / openrouter) 自动选合适显示
-- ✅ **零侵入** — 注册到 `conversation.input.right` slot (紧邻 model select 左侧), 不挡对话/输入
+- ✅ **零侵入** — 注册到 `conversation.input.right` slot (紧邻 model select; DSH 0.1.x RC 架构下在其**右侧**、send 按钮之前, 更老架构在左侧), 不挡对话/输入
 - ✅ **失败静默** — 拉数据失败只显示 `Provider ⚠`, hover 看具体错误, 不刷屏
 
 ## 演示
@@ -107,8 +107,8 @@ dsh plugin --profile web add github:Thedeergod666/dsh-musage
 
 ### 两种环境都要做的
 
-1. 在 DSH 模型设置里配置好你要监控的 provider (minimax-cn / deepseek / zhipu 等)
-2. 切到对应 model, composer 工具栏里出现 `[Provider 5h X% | 7d Y%]` 或 `[Provider $X.XX]`
+1. 在 DSH 模型设置里配置好你要监控的 provider (minimax-cn / deepseek / zhipu / dashscope 等)
+2. 切到对应 model, composer 工具栏里出现 `[Provider 5h X% | 7d Y%]` / `[Provider $X.XX]` / 百炼的三窗口 `[Bailian 5h X% | Wk Y% | Mo Z%]`
 
 本地开发 / 升级 / 故障排查见 [`deploy.md`](./deploy.md).
 

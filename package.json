@@ -29,6 +29,7 @@
     "LICENSE",
     "CHANGELOG.md",
     "docs",
+    "screenshots.json",
     "test"
   ],
   "exports": {

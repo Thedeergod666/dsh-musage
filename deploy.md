@@ -173,12 +173,18 @@ dsh plugin --profile web remove dsh-musage                     # 卸载
 | `kimi-coding` | `KIMI_CODING_API_KEY` | DSH 客户端自加 (无 ship adapter) |
 | `openrouter` | `OPENROUTER_API_KEY` | DSH 客户端自加 |
 | `zai-coding-cn` | `ZAI_CODING_CN_API_KEY` | DSH 客户端自加 |
+| `dashscope` / `bailian` / `qwen` / `coding-plan` 等 | 12 个候选 ref 任一命中即可 (`DASHSCOPE_API_KEY` / `DASHSCOPE_CODING_*` / `BAILIAN_*` / `QWEN_*` / `CODING_PLAN_API_KEY` / `ALIBABA_*`) | `bailian.console.aliyun.com` → `modelstudio.console.alibabacloud.com` (POST, 国内宿主返 `ConsoleNeedLogin` 时回退国际宿主) |
+
+> **百炼的 key 不能用错**: Coding Plan 用 `sk-sp-` 开头的专用 key + 专用 Base URL
+> (`coding.dashscope.aliyuncs.com`), 与按量计费的 `sk-` key / `dashscope.aliyuncs.com`
+> **不互通**. 但用量查询走的是控制台 API, 填对 `sk-sp-` key 即可, route id 随便起都能识别.
 
 ## 验证
 
-1. `dsh web` 起来后, 打开任一会话, composer 工具栏 (model select 左侧) 出现
+1. `dsh web` 起来后, 打开任一会话, composer 工具栏 (紧邻 model select, DSH 0.1.x
+   RC 架构下在 model select **右侧**、send 按钮之前; 更老架构在左侧) 出现
    当前 model 对应 provider 的用量. **切 model** 自动切 provider.
-2. host 路由可直接探 (同源 loopback 才放行):
+2. host 路由可直接探 (v0.1.3 起信任 localhost + 任意 IP 字面量的直连 Host):
 
 ```sh
 curl 'http://127.0.0.1:3080/musage/quota?provider=deepseek'
@@ -195,8 +201,9 @@ curl 'http://127.0.0.1:3080/musage/quota?provider=deepseek'
 | 显示 `musage` 不变 | model 切换的 provider route id 不在 `PROVIDER_ALIASES` 里 | 在 `dsh/client.js` 的 `PROVIDER_ALIASES` 加一行 |
 | 切 deepseek 不变 | DSH 用 `deepseek-official` 实际 provider id (带后缀) | v0.0.19 已修, 升级 plugin |
 | 显示 `Provider ⚠` 黄色 | 失败 (key 错 / 余额空 / schema 错) | hover 看 tooltip 拿具体 message, 看 `/private/tmp/dsh.log` 查 host parse 错误 |
+| 百炼恒显 `Bailian ⚠` | 填了按量计费的 `sk-` key, 而非 Coding Plan 专用 `sk-sp-` key | 换 `sk-sp-` 专用 key; 两个 key 体系不互通. 仍失败看 log 里是不是 `ConsoleNeedLogin` (两个宿主都试过了) |
 | `curl /musage/quota` 返回 HTML 首页 | host 半边没加载 (bundle 未进 bundles 列表 / 未重启) | 查 profile `package.json` 的 `dsh.profile.bundles`; 重启 `dsh web` |
-| `quota 路由 HTTP 403` | 非同源 loopback 请求 | 路由只答本机 web UI 的同源请求, 属预期 |
+| `quota 路由 HTTP 403` | Host 不是直连地址, 或请求跨源 | v0.1.3 起放行 `localhost` / `*.localhost` / `::1` / 任意 IPv4·IPv6 **字面量** (含 LAN 地址), 域名 Host 仍拒绝 —— IP 字面量不可能被 DNS rebinding 劫持. 跨源 (`Origin` 与 `Host` 不一致) 或 `sec-fetch-site: cross-site` 一律 403. 若你在 `dsh web` 绑 `0.0.0.0` 后从局域网另一台机器访问仍 403, 确认用的是 IP 地址而非域名 |
 | `Cannot read properties of undefined (reading 'maxBytes')` | stdio 写成数组而不是对象 `{stdin,stdout,stderr}` | v0.0.15 已修, 升级 plugin |
 | **桌面端**: 设置里搜不到社区插件 | 找的是 设置 → 内置插件, 那是只读清单 | 去侧边栏 **插件** 页, 「新会话」下面那个风车图标 |
 | **桌面端**: `dsh plugin --profile desktop add` 报 `managed exclusively` | 设计如此, desktop profile 由 Electron 独占 | 用侧边栏插件页; 或开 `tool-plugin-manager` 后用 `plugin_manager` 工具 |

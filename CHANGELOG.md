@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **根目录 `screenshots.json`**: 按 awesome-dsh-plugin 注册表 maintainer 在 PR #3940 里的
+  要求, 截图数据改放本仓库根目录 (新格式 `{"screenshots":[{"src","alt"}]}`), 不再改共享的
+  `data/screenshots.json` —— 后者是所有投稿共用的单个无序文件, maintainer 说最夸张时有 108 个
+  PR 同时改它, 合掉任意一个其余全部要 rebase. 同时删掉旧格式的 `docs/awesome-dsh-plugin-screenshots.json`.
+
+### Fixed
+- **README 的 slot 位置描述与实际不符**: 一直写「紧邻 model select 左侧」, 但 v0.1.2 起
+  DSH 0.1.x RC 架构下 `conversation.input.right` slot 落在 model select **右侧**、send 按钮之前.
+  现按架构版本分别说明.
+- **deploy.md 没跟上 v0.1.3 的路由信任检查**: 故障排查表和验证章节仍描述旧的
+  loopback-only 规则, 与 `dsh/index.js` 的 `isDirectHost()` 实际行为矛盾 —— 现放行
+  localhost / `*.localhost` / `::1` / 任意 IPv4·IPv6 字面量 (含 LAN 直连), 域名 Host 仍拒绝.
+- **deploy.md 缺百炼 provider 章节**: 补 route id / 12 个 API Key ref 候选 / 双宿主回退端点,
+  以及 `sk-sp-` 专用 key 与按量 `sk-` key 不互通的坑; 故障排查表加 `Bailian ⚠` 一行.
+
+### Removed
+- CHANGELOG 里 v0.0.21 时代残留的 `## 状态` / `## 下一步` 段 (内容已完全过时, 且 Notes
+  与 v0.0.21 条目重复), 改为文件末尾一份 `## Roadmap`
+
 ## v0.1.3 — 2026-10-05
 
 ### Added
@@ -79,27 +101,6 @@
 - curlFetch 支持 `authStyle: "raw"` (zhipu)
 - README + docs/architecture.md + deploy.md 全部更新到 v0.0.21 现状
 - `docs/assets/demo.gif` 演示 gif
-
-### Notes
-- kimi-coding endpoint 用户配置正确时 schema: `limits[].detail.{limit,remaining,resetTime}` + `usage.{limit,remaining,resetTime}`
-- 端点验证: openrouter 返 200 + balance_infos; zhipu 返 200 + 5h/7d 双窗口. kimi 返 403 (permission_denied, 用户订阅未开通, 但 schema 路径正确)
-- 灵感: Musage kimi.rs / openrouter.rs / zhipu.rs
-
-## 状态
-
-✅ PoC 完整收尾, 5 provider 全实装 (minimax / deepseek / kimi / openrouter / zhipu).
-✅ Slot 位置修对: `conversation.input.right`, 紧贴 model select 左侧, `margin-left: auto` 推右.
-✅ 跟 DSH 当前 model 自动切换, 无需手动操作.
-✅ 15 步踩坑沉淀在 `docs/cordis-pitfalls.md`.
-✅ 演示 gif 准备好 README 截图.
-✅ 仓库准备好 GitHub 推送 (5 provider 演示 + 完整 README + docs + 15 坑沉淀).
-
-## 下一步
-
-- 推 GitHub: 仓库完整, 走 `git remote add origin git@github.com:Thedeergod666/dsh-musage.git && git push -u origin main`
-- 扩 B 档 5 provider (tavily / zenmux / stepfun / siliconflow / claude_official), 走同 A 档模板
-- 火山方舟 (HMAC 签名) 单独插件 (需要复杂签名代码, 不适合放 host.js)
-- 加 `systemPrompt.variable` 让模型在每轮推理前看到"哪家还剩多少", 避免 429
 
 ### Notes
 - kimi-coding endpoint 用户配置正确时 schema: `limits[].detail.{limit,remaining,resetTime}` + `usage.{limit,remaining,resetTime}`
@@ -199,3 +200,10 @@
 
 ### Known Issues
 - v0.0.1 Slot Render 失败 (setInterval 不可用), v0.0.2 修复
+
+## Roadmap
+
+- 扩 B 档 provider (tavily / zenmux / stepfun / siliconflow / claude_official), 走同 A 档模板
+- 火山方舟 (HMAC 签名) 单独插件 (需要复杂签名代码, 不适合放现有 host 半边)
+- 加 `systemPrompt.variable` 让模型在每轮推理前看到"哪家还剩多少", 避免 429
+- 重录 widget 截图: `docs/assets/screenshots/*.png` 仍是 v0.0.x 老架构的位置 (model select 左侧)
